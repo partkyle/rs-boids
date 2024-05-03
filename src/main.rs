@@ -21,7 +21,7 @@ fn main() {
         }))
         .add_plugins(EguiPlugin)
         .add_systems(Startup, (setup_camera, setup))
-        .add_systems(Update, (close_on_esc, boids_ui, update_boid_velocity, update_boid_direction, boid_turn_factor))
+        .add_systems(Update, (close_on_esc, boids_ui, boid_movement, boid_rotation, boid_turn_factor))
         .run();
 }
 
@@ -189,7 +189,7 @@ fn spawn_boid(commands: &mut Commands, bvd: &BoidVisualData, config: &BoidConfig
         });
 }
 
-fn update_boid_velocity(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
+fn boid_movement(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
     for (boid, mut transform) in boids.iter_mut() {
         let new_pos = transform.translation.xy() + boid.velocity * time.delta().as_secs_f32();
         transform.translation.x = new_pos.x;
@@ -197,7 +197,7 @@ fn update_boid_velocity(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform
     }
 }
 
-fn update_boid_direction(mut boids: Query<(&Boid, &mut Transform)>) {
+fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
     for (boid, mut transform) in boids.iter_mut() {
         let angle = boid.velocity.x.atan2(boid.velocity.y);
         transform.rotation = Quat::from_axis_angle(Vec3::NEG_Z, angle);
