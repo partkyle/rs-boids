@@ -2,10 +2,11 @@ use bevy::{
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
+use bevy::input::keyboard::KeyboardInput;
 use bevy::render::RenderPlugin;
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
-use bevy::window::WindowResolution;
-use bevy_egui::{EguiContexts, EguiPlugin};
+use bevy::window::{close_on_esc, WindowResolution};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_egui::egui::lerp;
 use rand::random;
 
@@ -20,7 +21,7 @@ fn main() {
         }))
         .add_plugins(EguiPlugin)
         .add_systems(Startup, (setup_camera, setup))
-        .add_systems(Update, (boids_ui, update_boid_velocity, update_boid_direction, boid_turn_factor))
+        .add_systems(Update, (close_on_esc, boids_ui, update_boid_velocity, update_boid_direction, boid_turn_factor))
         .run();
 }
 
@@ -93,8 +94,9 @@ fn boids_ui(
     let mut config = config.single_mut();
     let bvd = bvd.single();
 
-    bevy_egui::egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
-        ui.horizontal(|ui| {
+    egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
+        egui::Grid::new("something").show(ui, |ui| {
+            ui.label("spawn count");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.spawn_count, 1..=10000u32),
             );
@@ -104,62 +106,57 @@ fn boids_ui(
                     spawn_boid(&mut commands, bvd, &config);
                 }
             }
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("turn_factor");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.turn_factor, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("visual_range");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.visual_range, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("protected_range");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.protected_range, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("centering_factor");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.centering_factor, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("avoid_factor");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.avoid_factor, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("matching_factor");
             ui.add(
                 bevy_egui::egui::Slider::new(&mut config.matching_factor, 0.0..=10.0f32),
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("max_speed");
+            let min = config.min_speed;
             ui.add(
-                bevy_egui::egui::Slider::new(&mut config.max_speed, 0.0..=100.0f32),
+                bevy_egui::egui::Slider::new(&mut config.max_speed, min..=100.0f32)
             );
-        });
+            ui.end_row();
 
-        ui.horizontal(|ui| {
             ui.label("min_speed");
+            let max = config.max_speed;
             ui.add(
-                bevy_egui::egui::Slider::new(&mut config.min_speed, 0.0..=100.0f32),
+                bevy_egui::egui::Slider::new(&mut config.min_speed, 0.0..=max),
             );
+            ui.end_row();
         });
     });
 }
@@ -193,7 +190,7 @@ fn update_boid_velocity(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform
     }
 }
 
-fn update_boid_direction(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
+fn update_boid_direction(mut boids: Query<(&Boid, &mut Transform)>) {
     for (boid, mut transform) in boids.iter_mut() {
         let angle = boid.velocity.x.atan2(boid.velocity.y);
         transform.rotation = Quat::from_axis_angle(Vec3::NEG_Z, angle);
