@@ -38,7 +38,9 @@ struct BoidVisualData {
 fn setup(mut commands: Commands,
          mut meshes: ResMut<Assets<Mesh>>,
          mut materials: ResMut<Assets<ColorMaterial>>,
+         window: Query<&Window>,
 ) {
+    let window = window.single();
     let size = 10.0;
     let shape = meshes.add(Triangle2d::new(
         Vec2::Y * size,
@@ -50,7 +52,10 @@ fn setup(mut commands: Commands,
 
     commands.spawn_empty().insert(BoidVisualData { shape, color });
 
-    commands.spawn_empty().insert(BoidConfiguration::default());
+    commands.spawn_empty().insert(BoidConfiguration{
+        turn_range: Rect::new(-window.width()/2.0, -window.height()/2.0, window.width()/2.0, window.height()/2.0),
+        ..default()
+    });
 }
 
 
@@ -59,6 +64,7 @@ struct BoidConfiguration {
     spawn_count: u32,
     spawn_range: Rect,
     turn_factor: f32,
+    turn_range: Rect,
     visual_range: f32,
     protected_range: f32,
     avoid_factor: f32,
@@ -74,6 +80,7 @@ impl Default for BoidConfiguration {
             spawn_count: 100,
             spawn_range: Rect { min: Vec2::new(-200.0, -200.0), max: Vec2::new(200.0, 200.0) },
             turn_factor: 0.2,
+            turn_range: Rect { min: Vec2::new(-200.0, -200.0), max: Vec2::new(200.0, 200.0) },
             visual_range: 20.0,
             protected_range: 2.0,
             centering_factor: 0.0005,
@@ -197,25 +204,22 @@ fn update_boid_direction(mut boids: Query<(&Boid, &mut Transform)>) {
     }
 }
 
-fn boid_turn_factor(time: Res<Time>, window: Query<&Window>, config: Query<&BoidConfiguration>, mut boids: Query<(&mut Boid, &Transform)>) {
-    let window = window.single();
+fn boid_turn_factor(time: Res<Time>, config: Query<&BoidConfiguration>, mut boids: Query<(&mut Boid, &Transform)>) {
     let config = config.single();
-    let w = window.width() / 2.0;
-    let h = window.height() / 2.0;
     for (mut boid, transform) in boids.iter_mut() {
-        if transform.translation.x < -w {
+        if transform.translation.x < config.turn_range.min.x {
             boid.velocity.x += config.turn_factor;
         }
 
-        if transform.translation.x > w {
+        if transform.translation.x > config.turn_range.max.x {
             boid.velocity.x -= config.turn_factor;
         }
 
-        if transform.translation.y < h {
+        if transform.translation.y < config.turn_range.min.y {
             boid.velocity.y += config.turn_factor;
         }
 
-        if transform.translation.y > -h {
+        if transform.translation.y > config.turn_range.max.y {
             boid.velocity.y -= config.turn_factor;
         }
     }
