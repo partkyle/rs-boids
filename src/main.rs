@@ -1,8 +1,5 @@
-use std::time::Duration;
-
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
-use bevy::time::common_conditions::on_timer;
 use bevy::window::close_on_esc;
 use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
@@ -57,7 +54,6 @@ fn setup_camera(mut commands: Commands) {
 #[derive(Component)]
 struct BoidVisualData {
     shape: Handle<Mesh>,
-    color: Handle<ColorMaterial>,
 }
 
 fn setup(
@@ -74,11 +70,7 @@ fn setup(
         Vec2::new(size / 2.0, -size),
     ));
 
-    let color = materials.add(Color::rgb(0.0, 1.0, 1.0));
-
-    commands
-        .spawn_empty()
-        .insert(BoidVisualData { shape, color });
+    commands.spawn_empty().insert(BoidVisualData { shape });
 
     let config = BoidConfiguration {
         boid_bounds: Rect::new(
@@ -300,7 +292,7 @@ fn spawn_boid(
         ColorMesh2dBundle {
             mesh: Mesh2dHandle(bvd.shape.clone()),
             // material: materials.add(Color::rgb(random(), random(), random())),
-            material: materials.add(Color::CYAN),
+            material: materials.add(Color::rgb(random(), random(), random())),
             transform: Transform::from_xyz(
                 lerp(
                     config.spawn_range.min.x..=config.spawn_range.max.x,
@@ -357,8 +349,6 @@ fn boid_flocking_behavriors(
         tree_jail.quadtree.query(&Rect { min, max }, &mut results);
 
         let mut dclose = Vec2::ZERO;
-        let mut count = 0;
-        let total = results.len();
 
         let mut boids_in_visual_range = 0;
         let mut velocity_avg = Vec2::ZERO;
@@ -371,7 +361,6 @@ fn boid_flocking_behavriors(
             let distance = position - other_position;
             if distance.length() <= config.protected_range {
                 dclose += distance;
-                count += 1;
             }
 
             if distance.length() <= config.visual_range {
@@ -400,7 +389,6 @@ fn boid_flocking_behavriors(
 fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&BoidConfiguration>) {
     let config = config.single();
     for mut boid in boids.iter_mut() {
-        let before = boid.velocity;
         if boid.velocity.length() <= config.max_speed {
             boid.velocity = boid.velocity.lerp(
                 boid.velocity.normalize() * config.max_speed,
@@ -493,12 +481,9 @@ struct EntityWrapper {
     velocity: Vec2,
 }
 fn populate_quadtree(
-    mut commands: Commands,
-    config: Query<&BoidConfiguration>,
     mut tree_jail: Query<&mut TreeJail>,
     boids: Query<(Entity, &Boid, &Transform), With<Boid>>,
 ) {
-    let config = config.single();
     let mut tree_jail = tree_jail.single_mut();
     tree_jail.quadtree =
         quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
@@ -516,12 +501,11 @@ fn populate_quadtree(
 fn render_quadtree(
     mut commands: Commands,
     config: Query<&BoidConfiguration>,
-    tree_jail: Query<(Entity, &TreeJail, &Handle<ColorMaterial>)>,
-    shapes: Query<(Entity, &Path)>,
+    tree_jail: Query<(Entity, &TreeJail)>,
 ) {
     let config = config.single();
 
-    let (entity, tree_jail, color) = tree_jail.single();
+    let (entity, tree_jail) = tree_jail.single();
 
     commands.entity(entity).despawn_descendants();
 
