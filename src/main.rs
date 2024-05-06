@@ -32,7 +32,9 @@ fn main() {
                 populate_quadtree,
                 render_quadtree,
                 boids_ui,
-                boid_flocking_behavriors,
+                boid_update_protected_ranges,
+                boid_update_visible_ranges,
+                boid_flocking_behaviors,
                 boid_speed_up,
                 boid_rotation,
                 boid_turn_factor,
@@ -78,8 +80,6 @@ fn setup(
         ..default()
     };
 
-    println!("{:?}", config.boid_bounds);
-
     let color = materials.add(Color::rgb(0.0, 1.0, 0.0));
     let tree_jail = TreeJail::new(config.boid_bounds, 100);
     commands
@@ -97,7 +97,7 @@ struct BoidConfiguration {
     spawn_range: Rect,
     turn_factor: f32,
     boid_bounds: Rect,
-    visual_range: f32,
+    visible_range: f32,
     protected_range: f32,
     avoid_factor: f32,
     centering_factor: f32,
@@ -106,6 +106,9 @@ struct BoidConfiguration {
     min_speed: f32,
 
     render_quadtree: bool,
+    render_protected_range: bool,
+    render_visible_range: bool,
+
     update_colors: bool,
     update_color_sample_rate: f32,
     update_color_type: ColorType,
@@ -119,20 +122,28 @@ impl Default for BoidConfiguration {
                 min: Vec2::new(-200.0, -200.0),
                 max: Vec2::new(200.0, 200.0),
             },
-            turn_factor: 1.2,
+
             boid_bounds: Rect {
                 min: Vec2::new(-200.0, -200.0),
                 max: Vec2::new(200.0, 200.0),
             },
-            visual_range: 100.0,
+
+            turn_factor: 1.2,
+
+            visible_range: 100.0,
             protected_range: 40.0,
+
             centering_factor: 0.0005,
             avoid_factor: 0.05,
             matching_factor: 0.05,
+
             max_speed: 100.0,
             min_speed: 2.0,
 
             render_quadtree: false,
+            render_protected_range: false,
+            render_visible_range: false,
+
             update_colors: false,
             update_color_sample_rate: 0.1,
             update_color_type: ColorType::Synthwave,
@@ -179,9 +190,9 @@ fn boids_ui(
             ));
             ui.end_row();
 
-            ui.label("visual_range");
+            ui.label("visible_range");
             ui.add(bevy_egui::egui::Slider::new(
-                &mut config.visual_range,
+                &mut config.visible_range,
                 0.0..=100.0f32,
             ));
             ui.end_row();
@@ -231,9 +242,11 @@ fn boids_ui(
             ui.end_row();
 
             ui.checkbox(&mut config.render_quadtree, "render_quadtree");
-            ui.checkbox(&mut config.update_colors, "update_colors");
+            ui.checkbox(&mut config.render_protected_range, "render_protected_range");
+            ui.checkbox(&mut config.render_visible_range, "render_visible_range");
             ui.end_row();
 
+            ui.checkbox(&mut config.update_colors, "update_colors");
             ui.label("update_color_sample_rate");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.update_color_sample_rate,
@@ -256,10 +269,64 @@ fn boids_ui(
     });
 }
 
+fn boid_update_protected_ranges(
+    config: Query<&BoidConfiguration>,
+    mut ranges: Query<(&mut Visibility, &mut Path), With<BoidProtectedRange>>,
+) {
+    let config = config.single();
+
+    let protected_visibility = if config.render_protected_range {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+
+    let shape = shapes::Circle {
+        center: Vec2::ZERO,
+        radius: config.protected_range,
+        ..default()
+    };
+
+    for (mut visibility, mut path) in ranges.iter_mut() {
+        *visibility = protected_visibility;
+        *path = GeometryBuilder::build_as(&shape);
+    }
+}
+
+fn boid_update_visible_ranges(
+    config: Query<&BoidConfiguration>,
+    mut ranges: Query<(&mut Visibility, &mut Path), With<BoidVisibleRange>>,
+) {
+    let config = config.single();
+
+    let visual_visibility = if config.render_visible_range {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+
+    let shape = shapes::Circle {
+        center: Vec2::ZERO,
+        radius: config.visible_range,
+        ..default()
+    };
+
+    for (mut visibility, mut path) in ranges.iter_mut() {
+        *visibility = visual_visibility;
+        *path = GeometryBuilder::build_as(&shape);
+    }
+}
+
 #[derive(Component, Default)]
 struct Boid {
     velocity: Vec2,
 }
+
+#[derive(Component, Default)]
+struct BoidProtectedRange;
+
+#[derive(Component, Default)]
+struct BoidVisibleRange;
 
 fn spawn_boid(
     commands: &mut Commands,
@@ -267,53 +334,91 @@ fn spawn_boid(
     config: &BoidConfiguration,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
-    // let shape = shapes::Circle {
-    //     center: Vec2::ZERO,
-    //     radius: config.protected_range,
-    //     ..default()
-    // };
-    // let range_radius = commands.spawn(
-    //     (
-    //         Name::new("protected_range"),
-    //         ShapeBundle {
-    //             path: GeometryBuilder::build_as(&shape),
-    //             ..default()
-    //         },
-    //         Stroke::new(Color::RED, 1.0),
-    //     )
-    // ).id();
-
     let entity = commands.spawn_empty().id();
 
-    commands.entity(entity).insert((
-        Name::new("boid"),
-        ColorMesh2dBundle {
-            mesh: Mesh2dHandle(bvd.shape.clone()),
-            // material: materials.add(Color::rgb(random(), random(), random())),
-            material: materials.add(Color::rgb(random(), random(), random())),
-            transform: Transform::from_xyz(
-                lerp(
-                    config.spawn_range.min.x..=config.spawn_range.max.x,
-                    random::<f32>(),
-                ),
-                lerp(
-                    config.spawn_range.min.y..=config.spawn_range.max.y,
-                    random::<f32>(),
-                ),
-                // use the entity index for the z value to prevent (war) z-fighting
-                entity.index() as f32 * 0.001,
-            ),
-            ..default()
-        },
-        Boid {
-            velocity: Vec2 {
-                x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+    let shape = shapes::Circle {
+        center: Vec2::ZERO,
+        radius: config.protected_range,
+        ..default()
+    };
+
+    let protected_range = commands
+        .spawn((
+            Name::new("protected_range"),
+            ShapeBundle {
+                path: GeometryBuilder::build_as(&shape),
+                spatial: SpatialBundle {
+                    visibility: if config.render_protected_range {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    ..default()
+                },
+                ..default()
             },
-            ..default()
-        },
-    ));
-    // ).add_child(range_radius);
+            Stroke::new(Color::RED, 1.0),
+            BoidProtectedRange,
+        ))
+        .id();
+
+    let shape = shapes::Circle {
+        center: Vec2::ZERO,
+        radius: config.visible_range,
+        ..default()
+    };
+    let visible_range = commands
+        .spawn((
+            Name::new("visible_range"),
+            ShapeBundle {
+                path: GeometryBuilder::build_as(&shape),
+                spatial: SpatialBundle {
+                    visibility: if config.render_visible_range {
+                        Visibility::Inherited
+                    } else {
+                        Visibility::Hidden
+                    },
+                    ..default()
+                },
+                ..default()
+            },
+            Stroke::new(Color::GREEN, 1.0),
+            BoidVisibleRange,
+        ))
+        .id();
+
+    commands
+        .entity(entity)
+        .insert((
+            Name::new("boid"),
+            ColorMesh2dBundle {
+                mesh: Mesh2dHandle(bvd.shape.clone()),
+                // material: materials.add(Color::rgb(random(), random(), random())),
+                material: materials.add(Color::rgb(random(), random(), random())),
+                transform: Transform::from_xyz(
+                    lerp(
+                        config.spawn_range.min.x..=config.spawn_range.max.x,
+                        random::<f32>(),
+                    ),
+                    lerp(
+                        config.spawn_range.min.y..=config.spawn_range.max.y,
+                        random::<f32>(),
+                    ),
+                    // use the entity index for the z value to prevent (war) z-fighting
+                    entity.index() as f32 * 0.001,
+                ),
+                ..default()
+            },
+            Boid {
+                velocity: Vec2 {
+                    x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+                    y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+                },
+                ..default()
+            },
+        ))
+        .add_child(protected_range)
+        .add_child(visible_range);
 }
 
 fn boid_movement(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
@@ -331,7 +436,7 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
     }
 }
 
-fn boid_flocking_behavriors(
+fn boid_flocking_behaviors(
     mut boids: Query<(Entity, &mut Boid, &Transform)>,
     tree_jail: Query<&TreeJail>,
     config: Query<&BoidConfiguration>,
@@ -341,15 +446,16 @@ fn boid_flocking_behavriors(
     for (entity, mut boid, transform) in boids.iter_mut() {
         // tree_jail.quadtree
         let position = transform.translation.xy();
-        let min = position - (config.protected_range.max(config.visual_range) / 2.0);
-        let max = position + (config.protected_range.max(config.visual_range) / 2.0);
+        let max_range = config.protected_range.max(config.visible_range);
+        let min = position - (max_range / 2.0);
+        let max = position + (max_range / 2.0);
 
         let mut results = vec![];
         tree_jail.quadtree.query(&Rect { min, max }, &mut results);
 
         let mut dclose = Vec2::ZERO;
 
-        let mut boids_in_visual_range = 0;
+        let mut boids_in_visible_range = 0;
         let mut velocity_avg = Vec2::ZERO;
         let mut position_avg = Vec2::ZERO;
         for (other_position, other_entity) in results {
@@ -362,8 +468,8 @@ fn boid_flocking_behavriors(
                 dclose += distance;
             }
 
-            if distance.length() <= config.visual_range {
-                boids_in_visual_range += 1;
+            if distance.length() <= config.visible_range {
+                boids_in_visible_range += 1;
                 velocity_avg += other_entity.velocity;
 
                 position_avg += other_position;
@@ -372,13 +478,13 @@ fn boid_flocking_behavriors(
 
         boid.velocity += dclose * config.avoid_factor;
 
-        if boids_in_visual_range > 0 {
+        if boids_in_visible_range > 0 {
             // alignment
-            velocity_avg /= boids_in_visual_range as f32;
+            velocity_avg /= boids_in_visible_range as f32;
             boid.velocity = boid.velocity + (velocity_avg - boid.velocity) * config.matching_factor;
 
             // cohesion
-            position_avg /= boids_in_visual_range as f32;
+            position_avg /= boids_in_visible_range as f32;
             boid.velocity = boid.velocity
                 + (position_avg - transform.translation.xy()) * config.centering_factor
         }
