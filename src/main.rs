@@ -119,6 +119,8 @@ struct BoidConfiguration {
 
     render_quadtree: bool,
     update_colors: bool,
+    update_color_sample_rate: f32,
+    update_color_type: ColorType,
 }
 
 impl Default for BoidConfiguration {
@@ -144,6 +146,8 @@ impl Default for BoidConfiguration {
 
             render_quadtree: false,
             update_colors: false,
+            update_color_sample_rate: 0.1,
+            update_color_type: ColorType::Synthwave,
         }
     }
 }
@@ -239,8 +243,27 @@ fn boids_ui(
             ui.end_row();
 
             ui.checkbox(&mut config.render_quadtree, "render_quadtree");
-
             ui.checkbox(&mut config.update_colors, "update_colors");
+            ui.end_row();
+
+            ui.label("update_color_sample_rate");
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.update_color_sample_rate,
+                0.0..=1.0f32,
+            ));
+            ui.end_row();
+
+            ui.radio_value(
+                &mut config.update_color_type,
+                ColorType::Synthwave,
+                "Synthwave",
+            );
+            ui.radio_value(&mut config.update_color_type, ColorType::Pastel, "Pastel");
+            ui.radio_value(
+                &mut config.update_color_type,
+                ColorType::PrimaryRGB,
+                "PrimaryRGB",
+            );
         });
     });
 }
@@ -387,6 +410,7 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum ColorType {
     Synthwave,
     Pastel,
@@ -404,12 +428,10 @@ fn boid_update_colors(
         return;
     }
 
-    let color_type = ColorType::Synthwave;
-
     for (boid, color) in boids.iter() {
-        if random::<f32>() < 0.1 {
+        if random::<f32>() < config.update_color_sample_rate {
             if let Some(color) = materials.get_mut(color.id()) {
-                match color_type {
+                match config.update_color_type {
                     ColorType::Synthwave => {
                         let r: f32 = boid.velocity.x.abs() / config.max_speed;
                         let g = boid.velocity.y.abs() / config.max_speed;
