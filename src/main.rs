@@ -40,10 +40,6 @@ fn main() {
                 boid_movement,
             ),
         )
-        //.add_systems(
-        //Update,
-        //boid_update_colors.run_if(on_timer(Duration::from_secs(1))),
-        //)
         .run();
 }
 
@@ -287,7 +283,9 @@ fn spawn_boid(
     //     )
     // ).id();
 
-    commands.spawn((
+    let entity = commands.spawn_empty().id();
+
+    commands.entity(entity).insert((
         Name::new("boid"),
         ColorMesh2dBundle {
             mesh: Mesh2dHandle(bvd.shape.clone()),
@@ -302,7 +300,8 @@ fn spawn_boid(
                     config.spawn_range.min.y..=config.spawn_range.max.y,
                     random::<f32>(),
                 ),
-                0.0,
+                // use the entity index for the z value to prevent (war) z-fighting
+                entity.index() as f32 * 0.001,
             ),
             ..default()
         },
@@ -333,13 +332,13 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
 }
 
 fn boid_flocking_behavriors(
-    mut boids: Query<(Entity, &mut Boid, &mut Transform)>,
+    mut boids: Query<(Entity, &mut Boid, &Transform)>,
     tree_jail: Query<&TreeJail>,
     config: Query<&BoidConfiguration>,
 ) {
     let config = config.single();
     let tree_jail = tree_jail.single();
-    for (entity, mut boid, mut transform) in boids.iter_mut() {
+    for (entity, mut boid, transform) in boids.iter_mut() {
         // tree_jail.quadtree
         let position = transform.translation.xy();
         let min = position - (config.protected_range.max(config.visual_range) / 2.0);
