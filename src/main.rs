@@ -129,13 +129,13 @@ impl Default for BoidConfiguration {
                 min: Vec2::new(-200.0, -200.0),
                 max: Vec2::new(200.0, 200.0),
             },
-            turn_factor: 0.2,
+            turn_factor: 1.2,
             boid_bounds: Rect {
                 min: Vec2::new(-200.0, -200.0),
                 max: Vec2::new(200.0, 200.0),
             },
-            visual_range: 20.0,
-            protected_range: 2.0,
+            visual_range: 100.0,
+            protected_range: 40.0,
             centering_factor: 0.0005,
             avoid_factor: 0.05,
             matching_factor: 0.05,
@@ -172,7 +172,6 @@ fn boids_ui(
                     spawn_boid(&mut commands, bvd, &config, &mut materials);
                 }
             }
-            ui.end_row();
 
             if ui.button("despawn").clicked() {
                 for entity in boids.iter() {
@@ -277,7 +276,8 @@ fn spawn_boid(
         Name::new("boid"),
         ColorMesh2dBundle {
             mesh: Mesh2dHandle(bvd.shape.clone()),
-            material: materials.add(Color::rgb(random(), random(), random())),
+            // material: materials.add(Color::rgb(random(), random(), random())),
+            material: materials.add(Color::CYAN),
             transform: Transform::from_xyz(
                 lerp(
                     config.spawn_range.min.x..=config.spawn_range.max.x,
@@ -387,6 +387,12 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
     }
 }
 
+enum ColorType {
+    Synthwave,
+    Pastel,
+    PrimaryRGB,
+}
+
 fn boid_update_colors(
     boids: Query<(&Boid, &Handle<ColorMaterial>)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -398,14 +404,28 @@ fn boid_update_colors(
         return;
     }
 
+    let color_type = ColorType::Synthwave;
+
     for (boid, color) in boids.iter() {
         if random::<f32>() < 0.1 {
             if let Some(color) = materials.get_mut(color.id()) {
-                color.color = Color::rgb(
-                    boid.velocity.x.abs() / config.max_speed,
-                    boid.velocity.y.abs() / config.max_speed,
-                    1.0,
-                );
+                match color_type {
+                    ColorType::Synthwave => {
+                        let r: f32 = boid.velocity.x.abs() / config.max_speed;
+                        let g = boid.velocity.y.abs() / config.max_speed;
+                        color.color = Color::rgb(r, g, 1.0);
+                    }
+                    ColorType::Pastel => {
+                        let r: f32 = boid.velocity.x.abs() / config.max_speed;
+                        let g = boid.velocity.y.abs() / config.max_speed;
+                        color.color = Color::rgb(r, g, (1.0 - r - g).clamp(0.0, 1.0));
+                    }
+                    ColorType::PrimaryRGB => {
+                        let r: f32 = (boid.velocity.x + boid.velocity.x.abs()) / config.max_speed;
+                        let g = (boid.velocity.y + boid.velocity.y.abs()) / config.max_speed;
+                        color.color = Color::rgb(r, g, (1.0 - r - g).clamp(0.0, 1.0));
+                    }
+                }
             }
         }
     }
