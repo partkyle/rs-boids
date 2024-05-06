@@ -1,13 +1,12 @@
-use bevy::{
-    prelude::*,
-    sprite::Mesh2dHandle,
-};
-use bevy::render::mesh::PrimitiveTopology::LineList;
-use bevy::render::RenderPlugin;
+use std::time::Duration;
+
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
+use bevy::render::RenderPlugin;
+use bevy::time::common_conditions::on_timer;
 use bevy::window::close_on_esc;
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_prototype_lyon::prelude::*;
 use rand::random;
@@ -29,7 +28,25 @@ fn main() {
         .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
         .add_systems(Startup, (setup_camera, setup))
-        .add_systems(Update, (close_on_esc, populate_quadtree, render_quadtree, boids_ui, boid_flocking_behavriors, boid_speed_up, boid_rotation, boid_turn_factor, boid_movement))
+        .add_systems(
+            Update,
+            (
+                close_on_esc,
+                populate_quadtree,
+                render_quadtree,
+                boids_ui,
+                boid_flocking_behavriors,
+                boid_speed_up,
+                boid_rotation,
+                boid_turn_factor,
+                boid_update_colors,
+                boid_movement,
+            ),
+        )
+        //.add_systems(
+        //Update,
+        //boid_update_colors.run_if(on_timer(Duration::from_secs(1))),
+        //)
         .run();
 }
 
@@ -43,10 +60,11 @@ struct BoidVisualData {
     color: Handle<ColorMaterial>,
 }
 
-fn setup(mut commands: Commands,
-         mut meshes: ResMut<Assets<Mesh>>,
-         mut materials: ResMut<Assets<ColorMaterial>>,
-         window: Query<&Window>,
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Query<&Window>,
 ) {
     let window = window.single();
     let size = 10.0;
@@ -58,11 +76,17 @@ fn setup(mut commands: Commands,
 
     let color = materials.add(Color::rgb(0.0, 1.0, 1.0));
 
-    commands.spawn_empty().insert(BoidVisualData { shape, color });
-
+    commands
+        .spawn_empty()
+        .insert(BoidVisualData { shape, color });
 
     let config = BoidConfiguration {
-        boid_bounds: Rect::new(-window.width() / 2.0, -window.height() / 2.0, window.width() / 2.0, window.height() / 2.0),
+        boid_bounds: Rect::new(
+            -window.width() / 2.0,
+            -window.height() / 2.0,
+            window.width() / 2.0,
+            window.height() / 2.0,
+        ),
         ..default()
     };
 
@@ -70,14 +94,14 @@ fn setup(mut commands: Commands,
 
     let color = materials.add(Color::rgb(0.0, 1.0, 0.0));
     let tree_jail = TreeJail::new(config.boid_bounds, 100);
-    commands.spawn_empty()
+    commands
+        .spawn_empty()
         .insert(tree_jail)
         .insert(SpatialBundle::default())
         .insert(color);
 
     commands.spawn_empty().insert(config);
 }
-
 
 #[derive(Component, Debug)]
 struct BoidConfiguration {
@@ -94,15 +118,22 @@ struct BoidConfiguration {
     min_speed: f32,
 
     render_quadtree: bool,
+    update_colors: bool,
 }
 
 impl Default for BoidConfiguration {
     fn default() -> Self {
         BoidConfiguration {
             spawn_count: 100,
-            spawn_range: Rect { min: Vec2::new(-200.0, -200.0), max: Vec2::new(200.0, 200.0) },
+            spawn_range: Rect {
+                min: Vec2::new(-200.0, -200.0),
+                max: Vec2::new(200.0, 200.0),
+            },
             turn_factor: 0.2,
-            boid_bounds: Rect { min: Vec2::new(-200.0, -200.0), max: Vec2::new(200.0, 200.0) },
+            boid_bounds: Rect {
+                min: Vec2::new(-200.0, -200.0),
+                max: Vec2::new(200.0, 200.0),
+            },
             visual_range: 20.0,
             protected_range: 2.0,
             centering_factor: 0.0005,
@@ -112,6 +143,7 @@ impl Default for BoidConfiguration {
             min_speed: 2.0,
 
             render_quadtree: false,
+            update_colors: false,
         }
     }
 }
@@ -120,6 +152,7 @@ fn boids_ui(
     mut commands: Commands,
     mut config: Query<&mut BoidConfiguration>,
     mut contexts: EguiContexts,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     boids: Query<Entity, With<Boid>>,
     bvd: Query<&BoidVisualData>,
 ) {
@@ -129,13 +162,14 @@ fn boids_ui(
     egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
         egui::Grid::new("something").show(ui, |ui| {
             ui.label("spawn count");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.spawn_count, 1..=10000u32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.spawn_count,
+                1..=10000u32,
+            ));
 
             if ui.button("spawn").clicked() {
                 for _ in 0..config.spawn_count {
-                    spawn_boid(&mut commands, bvd, &config);
+                    spawn_boid(&mut commands, bvd, &config, &mut materials);
                 }
             }
             ui.end_row();
@@ -148,67 +182,81 @@ fn boids_ui(
             ui.end_row();
 
             ui.label("turn_factor");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.turn_factor, 0.0..=10.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.turn_factor,
+                0.0..=10.0f32,
+            ));
             ui.end_row();
 
             ui.label("visual_range");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.visual_range, 0.0..=100.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.visual_range,
+                0.0..=100.0f32,
+            ));
             ui.end_row();
 
             ui.label("protected_range");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.protected_range, 0.0..=100.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.protected_range,
+                0.0..=100.0f32,
+            ));
             ui.end_row();
 
             ui.label("centering_factor");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.centering_factor, 0.0..=10.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.centering_factor,
+                0.0..=10.0f32,
+            ));
             ui.end_row();
 
             ui.label("avoid_factor");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.avoid_factor, 0.0..=10.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.avoid_factor,
+                0.0..=10.0f32,
+            ));
             ui.end_row();
 
             ui.label("matching_factor");
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.matching_factor, 0.0..=10.0f32),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.matching_factor,
+                0.0..=10.0f32,
+            ));
             ui.end_row();
 
             ui.label("max_speed");
             let min = config.min_speed;
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.max_speed, min..=1000.0f32)
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.max_speed,
+                min..=1000.0f32,
+            ));
             ui.end_row();
 
             ui.label("min_speed");
             let max = config.max_speed;
-            ui.add(
-                bevy_egui::egui::Slider::new(&mut config.min_speed, 0.0..=max),
-            );
+            ui.add(bevy_egui::egui::Slider::new(
+                &mut config.min_speed,
+                0.0..=max,
+            ));
             ui.end_row();
 
             ui.checkbox(&mut config.render_quadtree, "render_quadtree");
+
+            ui.checkbox(&mut config.update_colors, "update_colors");
         });
     });
 }
-
 
 #[derive(Component, Default)]
 struct Boid {
     velocity: Vec2,
 }
 
-fn spawn_boid(commands: &mut Commands, bvd: &BoidVisualData, config: &BoidConfiguration) {
+fn spawn_boid(
+    commands: &mut Commands,
+    bvd: &BoidVisualData,
+    config: &BoidConfiguration,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+) {
     // let shape = shapes::Circle {
     //     center: Vec2::ZERO,
     //     radius: config.protected_range,
@@ -225,24 +273,32 @@ fn spawn_boid(commands: &mut Commands, bvd: &BoidVisualData, config: &BoidConfig
     //     )
     // ).id();
 
-    commands.spawn(
-        (
-            Name::new("boid"),
-            ColorMesh2dBundle {
-                mesh: Mesh2dHandle(bvd.shape.clone()),
-                material: bvd.color.clone(),
-                transform: Transform::from_xyz(lerp(config.spawn_range.min.x..=config.spawn_range.max.x, random::<f32>()), lerp(config.spawn_range.min.y..=config.spawn_range.max.y, random::<f32>()), 0.0),
-                ..default()
+    commands.spawn((
+        Name::new("boid"),
+        ColorMesh2dBundle {
+            mesh: Mesh2dHandle(bvd.shape.clone()),
+            material: materials.add(Color::rgb(random(), random(), random())),
+            transform: Transform::from_xyz(
+                lerp(
+                    config.spawn_range.min.x..=config.spawn_range.max.x,
+                    random::<f32>(),
+                ),
+                lerp(
+                    config.spawn_range.min.y..=config.spawn_range.max.y,
+                    random::<f32>(),
+                ),
+                0.0,
+            ),
+            ..default()
+        },
+        Boid {
+            velocity: Vec2 {
+                x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+                y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
             },
-            Boid {
-                velocity: Vec2 {
-                    x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                    y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                },
-                ..default()
-            },
-        )
-    );
+            ..default()
+        },
+    ));
     // ).add_child(range_radius);
 }
 
@@ -261,7 +317,11 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
     }
 }
 
-fn boid_flocking_behavriors(mut boids: Query<(Entity, &mut Boid, &mut Transform)>, tree_jail: Query<&TreeJail>, config: Query<&BoidConfiguration>) {
+fn boid_flocking_behavriors(
+    mut boids: Query<(Entity, &mut Boid, &mut Transform)>,
+    tree_jail: Query<&TreeJail>,
+    config: Query<&BoidConfiguration>,
+) {
     let config = config.single();
     let tree_jail = tree_jail.single();
     for (entity, mut boid, mut transform) in boids.iter_mut() {
@@ -308,7 +368,8 @@ fn boid_flocking_behavriors(mut boids: Query<(Entity, &mut Boid, &mut Transform)
 
             // cohesion
             position_avg /= boids_in_visual_range as f32;
-            boid.velocity = boid.velocity + (position_avg - transform.translation.xy()) * config.centering_factor
+            boid.velocity = boid.velocity
+                + (position_avg - transform.translation.xy()) * config.centering_factor
         }
     }
 }
@@ -318,7 +379,34 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
     for mut boid in boids.iter_mut() {
         let before = boid.velocity;
         if boid.velocity.length() <= config.max_speed {
-            boid.velocity = boid.velocity.lerp(boid.velocity.normalize() * config.max_speed, time.delta_seconds());
+            boid.velocity = boid.velocity.lerp(
+                boid.velocity.normalize() * config.max_speed,
+                time.delta_seconds(),
+            );
+        }
+    }
+}
+
+fn boid_update_colors(
+    boids: Query<(&Boid, &Handle<ColorMaterial>)>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    config: Query<&BoidConfiguration>,
+) {
+    let config = config.single();
+
+    if !config.update_colors {
+        return;
+    }
+
+    for (boid, color) in boids.iter() {
+        if random::<f32>() < 0.1 {
+            if let Some(color) = materials.get_mut(color.id()) {
+                color.color = Color::rgb(
+                    boid.velocity.x.abs() / config.max_speed,
+                    boid.velocity.y.abs() / config.max_speed,
+                    1.0,
+                );
+            }
         }
     }
 }
@@ -362,16 +450,33 @@ struct EntityWrapper {
     entity: Entity,
     velocity: Vec2,
 }
-fn populate_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, mut tree_jail: Query<&mut TreeJail>, boids: Query<(Entity, &Boid, &Transform), With<Boid>>) {
+fn populate_quadtree(
+    mut commands: Commands,
+    config: Query<&BoidConfiguration>,
+    mut tree_jail: Query<&mut TreeJail>,
+    boids: Query<(Entity, &Boid, &Transform), With<Boid>>,
+) {
     let config = config.single();
     let mut tree_jail = tree_jail.single_mut();
-    tree_jail.quadtree = quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
+    tree_jail.quadtree =
+        quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
     for (entity, boid, transform) in boids.iter() {
-        tree_jail.quadtree.insert(transform.translation.xy(), EntityWrapper{entity, velocity: boid.velocity});
+        tree_jail.quadtree.insert(
+            transform.translation.xy(),
+            EntityWrapper {
+                entity,
+                velocity: boid.velocity,
+            },
+        );
     }
 }
 
-fn render_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, tree_jail: Query<(Entity, &TreeJail, &Handle<ColorMaterial>)>, shapes: Query<(Entity, &Path)>) {
+fn render_quadtree(
+    mut commands: Commands,
+    config: Query<&BoidConfiguration>,
+    tree_jail: Query<(Entity, &TreeJail, &Handle<ColorMaterial>)>,
+    shapes: Query<(Entity, &Path)>,
+) {
     let config = config.single();
 
     let (entity, tree_jail, color) = tree_jail.single();
@@ -391,9 +496,9 @@ fn render_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, tr
             ..default()
         };
         children.push(
-            commands.spawn_empty()
-            .insert(
-                (
+            commands
+                .spawn_empty()
+                .insert((
                     ShapeBundle {
                         path: GeometryBuilder::build_as(&shape),
                         spatial: SpatialBundle {
@@ -403,8 +508,8 @@ fn render_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, tr
                         ..default()
                     },
                     Stroke::new(Color::GREEN, 1.0),
-                )
-            ).id()
+                ))
+                .id(),
         );
     }
 
