@@ -29,7 +29,7 @@ fn main() {
         .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
         .add_systems(Startup, (setup_camera, setup))
-        .add_systems(Update, (close_on_esc, populate_quadtree, render_quadtree, boids_ui, boid_separation, boid_speed_up, boid_rotation, boid_turn_factor, boid_movement))
+        .add_systems(Update, (close_on_esc, populate_quadtree, render_quadtree, boids_ui, boid_flocking_behavriors, boid_speed_up, boid_rotation, boid_turn_factor, boid_movement))
         .run();
 }
 
@@ -155,13 +155,13 @@ fn boids_ui(
 
             ui.label("visual_range");
             ui.add(
-                bevy_egui::egui::Slider::new(&mut config.visual_range, 0.0..=10.0f32),
+                bevy_egui::egui::Slider::new(&mut config.visual_range, 0.0..=100.0f32),
             );
             ui.end_row();
 
             ui.label("protected_range");
             ui.add(
-                bevy_egui::egui::Slider::new(&mut config.protected_range, 0.0..=1000.0f32),
+                bevy_egui::egui::Slider::new(&mut config.protected_range, 0.0..=100.0f32),
             );
             ui.end_row();
 
@@ -209,21 +209,21 @@ struct Boid {
 }
 
 fn spawn_boid(commands: &mut Commands, bvd: &BoidVisualData, config: &BoidConfiguration) {
-    let shape = shapes::Circle {
-        center: Vec2::ZERO,
-        radius: config.protected_range,
-        ..default()
-    };
-    let range_radius = commands.spawn(
-        (
-            Name::new("protected_range"),
-            ShapeBundle {
-                path: GeometryBuilder::build_as(&shape),
-                ..default()
-            },
-            Stroke::new(Color::RED, 1.0),
-        )
-    ).id();
+    // let shape = shapes::Circle {
+    //     center: Vec2::ZERO,
+    //     radius: config.protected_range,
+    //     ..default()
+    // };
+    // let range_radius = commands.spawn(
+    //     (
+    //         Name::new("protected_range"),
+    //         ShapeBundle {
+    //             path: GeometryBuilder::build_as(&shape),
+    //             ..default()
+    //         },
+    //         Stroke::new(Color::RED, 1.0),
+    //     )
+    // ).id();
 
     commands.spawn(
         (
@@ -242,7 +242,8 @@ fn spawn_boid(commands: &mut Commands, bvd: &BoidVisualData, config: &BoidConfig
                 ..default()
             },
         )
-    ).add_child(range_radius);
+    );
+    // ).add_child(range_radius);
 }
 
 fn boid_movement(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
@@ -260,22 +261,27 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
     }
 }
 
-fn boid_separation(mut boids: Query<(Entity, &mut Boid, &mut Transform)>, tree_jail: Query<&TreeJail>, config: Query<&BoidConfiguration>) {
+fn boid_flocking_behavriors(mut boids: Query<(Entity, &mut Boid, &mut Transform)>, tree_jail: Query<&TreeJail>, config: Query<&BoidConfiguration>) {
     let config = config.single();
     let tree_jail = tree_jail.single();
     for (entity, mut boid, mut transform) in boids.iter_mut() {
         // tree_jail.quadtree
         let position = transform.translation.xy();
-        let min = position - (config.protected_range / 2.0);
-        let max = position + (config.protected_range / 2.0);
+        let min = position - (config.protected_range.max(config.visual_range) / 2.0);
+        let max = position + (config.protected_range.max(config.visual_range) / 2.0);
+
         let mut results = vec![];
         tree_jail.quadtree.query(&Rect { min, max }, &mut results);
 
         let mut dclose = Vec2::ZERO;
         let mut count = 0;
         let total = results.len();
+
+        let mut boids_in_visual_range = 0;
+        let mut velocity_avg = Vec2::ZERO;
+        let mut position_avg = Vec2::ZERO;
         for (other_position, other_entity) in results {
-            if entity == other_entity {
+            if entity == other_entity.entity {
                 continue;
             }
 
@@ -284,9 +290,26 @@ fn boid_separation(mut boids: Query<(Entity, &mut Boid, &mut Transform)>, tree_j
                 dclose += distance;
                 count += 1;
             }
+
+            if distance.length() <= config.visual_range {
+                boids_in_visual_range += 1;
+                velocity_avg += other_entity.velocity;
+
+                position_avg += other_position;
+            }
         }
 
         boid.velocity += dclose * config.avoid_factor;
+
+        if boids_in_visual_range > 0 {
+            // alignment
+            velocity_avg /= boids_in_visual_range as f32;
+            boid.velocity = boid.velocity + (velocity_avg - boid.velocity) * config.matching_factor;
+
+            // cohesion
+            position_avg /= boids_in_visual_range as f32;
+            boid.velocity = boid.velocity + (position_avg - transform.translation.xy()) * config.centering_factor
+        }
     }
 }
 
@@ -323,7 +346,7 @@ fn boid_turn_factor(config: Query<&BoidConfiguration>, mut boids: Query<(&mut Bo
 
 #[derive(Component)]
 struct TreeJail {
-    quadtree: Quadtree<Entity>,
+    quadtree: Quadtree<EntityWrapper>,
 }
 
 impl TreeJail {
@@ -334,12 +357,17 @@ impl TreeJail {
     }
 }
 
-fn populate_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, mut tree_jail: Query<&mut TreeJail>, boids: Query<(Entity, &Transform), With<Boid>>) {
+#[derive(Clone)]
+struct EntityWrapper {
+    entity: Entity,
+    velocity: Vec2,
+}
+fn populate_quadtree(mut commands: Commands, config: Query<&BoidConfiguration>, mut tree_jail: Query<&mut TreeJail>, boids: Query<(Entity, &Boid, &Transform), With<Boid>>) {
     let config = config.single();
     let mut tree_jail = tree_jail.single_mut();
-    tree_jail.quadtree = quadtree::Quadtree::new(Rect { min: config.boid_bounds.min * 1.5, max: config.boid_bounds.max * 1.5 }, 1);
-    for (entity, transform) in boids.iter() {
-        tree_jail.quadtree.insert(transform.translation.xy(), entity);
+    tree_jail.quadtree = quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
+    for (entity, boid, transform) in boids.iter() {
+        tree_jail.quadtree.insert(transform.translation.xy(), EntityWrapper{entity, velocity: boid.velocity});
     }
 }
 
