@@ -6,8 +6,8 @@ use bevy_prototype_lyon::{entity::Path, geometry::GeometryBuilder, shapes};
 
 use crate::BoidConfiguration;
 
-pub trait ShouldRenderRange {
-    fn should_render(&self, config: &BoidConfiguration) -> bool;
+pub trait RangeVisibility {
+    fn is_visible(&self, config: &BoidConfiguration) -> bool;
 }
 
 pub trait GetRangeRadius {
@@ -17,8 +17,8 @@ pub trait GetRangeRadius {
 #[derive(Component, Default)]
 pub struct BoidProtectedRange;
 
-impl ShouldRenderRange for BoidProtectedRange {
-    fn should_render(&self, config: &BoidConfiguration) -> bool {
+impl RangeVisibility for BoidProtectedRange {
+    fn is_visible(&self, config: &BoidConfiguration) -> bool {
         config.render_protected_range
     }
 }
@@ -32,8 +32,8 @@ impl GetRangeRadius for BoidProtectedRange {
 #[derive(Component, Default)]
 pub struct BoidVisibleRange;
 
-impl ShouldRenderRange for BoidVisibleRange {
-    fn should_render(&self, config: &BoidConfiguration) -> bool {
+impl RangeVisibility for BoidVisibleRange {
+    fn is_visible(&self, config: &BoidConfiguration) -> bool {
         config.render_visible_range
     }
 }
@@ -44,13 +44,13 @@ impl GetRangeRadius for BoidVisibleRange {
     }
 }
 
-pub fn boid_update_range_visibility<T: Component + ShouldRenderRange>(
+pub fn boid_update_range_visibility<T: Component + RangeVisibility>(
     config: Query<&BoidConfiguration>,
     mut ranges: Query<(&mut Visibility, &T)>,
 ) {
     let config = config.single();
     for (mut visibility, should_render) in ranges.iter_mut() {
-        if should_render.should_render(&config) {
+        if should_render.is_visible(&config) {
             *visibility = Visibility::Inherited;
         } else {
             *visibility = Visibility::Hidden;
@@ -58,7 +58,7 @@ pub fn boid_update_range_visibility<T: Component + ShouldRenderRange>(
     }
 }
 
-pub fn boid_update_range_path<T: Component + ShouldRenderRange + GetRangeRadius>(
+pub fn boid_update_range_path<T: Component + RangeVisibility + GetRangeRadius>(
     config: Query<&BoidConfiguration>,
     mut ranges: Query<(&mut Path, &T)>,
 ) {
@@ -66,7 +66,7 @@ pub fn boid_update_range_path<T: Component + ShouldRenderRange + GetRangeRadius>
     for (mut path, range_type) in ranges.iter_mut() {
         // early exit, but it's still done in the loop
         // this can still save processing time, but perhaps there's a better way
-        if !range_type.should_render(&config) {
+        if !range_type.is_visible(&config) {
             return;
         }
 
