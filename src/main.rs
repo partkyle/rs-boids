@@ -1,3 +1,4 @@
+use bevy::app::PluginGroupBuilder;
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
 use bevy::window::close_on_esc;
@@ -12,15 +13,25 @@ use crate::quadtree::Quadtree;
 
 pub mod quadtree;
 
+#[cfg(target_os = "windows")]
+fn default_plugins() -> PluginGroupBuilder {
+    DefaultPlugins.set(RenderPlugin {
+        render_creation: RenderCreation::Automatic(WgpuSettings {
+            backends: Some(Backends::VULKAN),
+            ..default()
+        }),
+        ..default()
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn default_plugins() -> PluginGroupBuilder {
+    DefaultPlugins.build()
+}
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(RenderPlugin {
-            render_creation: RenderCreation::Automatic(WgpuSettings {
-                backends: Some(Backends::VULKAN),
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
         .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
