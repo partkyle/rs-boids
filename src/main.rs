@@ -18,12 +18,19 @@ use render_range::{
     boid_update_range_path, boid_update_range_visibility, BoidProtectedRange, BoidVisibleRange,
 };
 
+#[derive(Resource, Deref, DerefMut)]
+struct QuadtreeJail(Quadtree<EntityWrapper>);
+
 fn main() {
     App::new()
         .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
         .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
+        .insert_resource(QuadtreeJail(quadtree::Quadtree::new(
+            Rect::new(-10000.0, -10000.0, 10000.0, 10000.0),
+            1,
+        )))
         .add_systems(Startup, (setup_camera, setup, spawn_1000).chain())
         .add_systems(
             Update,
@@ -62,12 +69,7 @@ struct BoidVisualData {
     shape: Handle<Mesh>,
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    window: Query<&Window>,
-) {
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, window: Query<&Window>) {
     let window = window.single();
     let size = 10.0;
     let shape = meshes.add(Triangle2d::new(
@@ -87,14 +89,6 @@ fn setup(
         ),
         ..default()
     };
-
-    let color = materials.add(Color::rgb(0.0, 1.0, 0.0));
-    let tree_jail = TreeJail::new(config.boid_bounds, 100);
-    commands
-        .spawn_empty()
-        .insert(tree_jail)
-        .insert(SpatialBundle::default())
-        .insert(color);
 
     commands.spawn_empty().insert(config);
 }
@@ -353,11 +347,10 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
 
 fn boid_flocking_behaviors(
     mut boids: Query<(Entity, &mut Boid)>,
-    tree_jail: Query<&TreeJail>,
+    qt: Res<QuadtreeJail>,
     config: Query<&BoidConfiguration>,
 ) {
     let config = config.single();
-    let tree_jail = tree_jail.single();
     for (entity, mut boid) in boids.iter_mut() {
         // tree_jail.quadtree
         let position = boid.position;
@@ -366,7 +359,7 @@ fn boid_flocking_behaviors(
         let max = position + (max_range / 2.0);
 
         let mut results = vec![];
-        tree_jail.quadtree.query(&Rect { min, max }, &mut results);
+        qt.query(&Rect { min, max }, &mut results);
 
         let mut dclose = Vec2::ZERO;
 
@@ -477,33 +470,16 @@ fn boid_turn_factor(config: Query<&BoidConfiguration>, mut boids: Query<(&mut Bo
     }
 }
 
-#[derive(Component)]
-struct TreeJail {
-    quadtree: Quadtree<EntityWrapper>,
-}
-
-impl TreeJail {
-    fn new(bounds: Rect, capacity: usize) -> TreeJail {
-        TreeJail {
-            quadtree: quadtree::Quadtree::new(bounds, capacity),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct EntityWrapper {
     entity: Entity,
     velocity: Vec2,
 }
-fn populate_quadtree(
-    mut tree_jail: Query<&mut TreeJail>,
-    boids: Query<(Entity, &Boid), With<Boid>>,
-) {
-    let mut tree_jail = tree_jail.single_mut();
-    tree_jail.quadtree =
-        quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
+
+fn populate_quadtree(mut qt: ResMut<QuadtreeJail>, boids: Query<(Entity, &Boid), With<Boid>>) {
+    qt.clear();
     for (entity, boid) in boids.iter() {
-        tree_jail.quadtree.insert(
+        qt.insert(
             boid.position,
             EntityWrapper {
                 entity,
@@ -513,48 +489,45 @@ fn populate_quadtree(
     }
 }
 
+#[derive(Component)]
+struct QuadtreeRectangle;
+
 fn render_quadtree(
     mut commands: Commands,
     config: Query<&BoidConfiguration>,
-    tree_jail: Query<(Entity, &TreeJail)>,
+    qt: Res<QuadtreeJail>,
+    rectangles: Query<Entity, With<QuadtreeRectangle>>,
 ) {
     let config = config.single();
 
-    let (entity, tree_jail) = tree_jail.single();
-
-    commands.entity(entity).despawn_descendants();
+    for e in rectangles.iter() {
+        commands.entity(e).despawn_recursive();
+    }
 
     if !config.render_quadtree {
         return;
     }
 
-    let mut children = vec![];
-    for b in tree_jail.quadtree.get_all_bounds() {
+    for b in qt.get_all_bounds() {
         let size = b.max - b.min;
         let shape = shapes::Rectangle {
             extents: size,
             origin: RectangleOrigin::BottomLeft,
             ..default()
         };
-        children.push(
-            commands
-                .spawn_empty()
-                .insert((
-                    ShapeBundle {
-                        path: GeometryBuilder::build_as(&shape),
-                        spatial: SpatialBundle {
-                            transform: Transform::from_xyz(b.min.x, b.min.y, -1.0),
-                            ..default()
-                        },
-                        ..default()
-                    },
-                    Stroke::new(Color::GREEN, 1.0),
-                ))
-                .id(),
-        );
+        commands.spawn_empty().insert((
+            ShapeBundle {
+                path: GeometryBuilder::build_as(&shape),
+                spatial: SpatialBundle {
+                    transform: Transform::from_xyz(b.min.x, b.min.y, -1.0),
+                    ..default()
+                },
+                ..default()
+            },
+            Stroke::new(Color::GREEN, 1.0),
+            QuadtreeRectangle,
+        ));
     }
-
-    commands.entity(entity).replace_children(&children);
 }
 
 fn update_boids_transform(mut boids: Query<(&Boid, &mut Transform)>) {
