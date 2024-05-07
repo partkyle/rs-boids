@@ -35,7 +35,7 @@ fn main() {
         .add_plugins(EguiPlugin)
         .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
-        .add_systems(Startup, (setup_camera, setup))
+        .add_systems(Startup, (setup_camera, setup, spawn_1000).chain())
         .add_systems(
             Update,
             (
@@ -341,6 +341,19 @@ struct BoidProtectedRange;
 
 #[derive(Component, Default)]
 struct BoidVisibleRange;
+
+fn spawn_1000(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    config: Query<&BoidConfiguration>,
+    bvd: Query<&BoidVisualData>,
+) {
+    let config = config.single();
+    let bvd = bvd.single();
+    for _ in 0..1000 {
+        spawn_boid(&mut commands, bvd, config, &mut materials)
+    }
+}
 
 fn spawn_boid(
     commands: &mut Commands,
