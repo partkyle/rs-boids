@@ -40,16 +40,22 @@ fn main() {
             Update,
             (
                 close_on_esc,
-                populate_quadtree,
                 render_quadtree,
                 boids_ui,
                 boid_update_protected_ranges,
                 boid_update_visible_ranges,
-                boid_flocking_behaviors,
-                boid_speed_up,
                 boid_rotation,
-                boid_turn_factor,
                 boid_update_colors,
+                update_boids_transform,
+            ),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                populate_quadtree,
+                boid_flocking_behaviors,
+                boid_turn_factor,
+                boid_speed_up,
                 boid_movement,
             ),
         )
@@ -332,6 +338,7 @@ fn boid_update_visible_ranges(
 
 #[derive(Component, Default)]
 struct Boid {
+    position: Vec2,
     velocity: Vec2,
     initial_color: Color,
 }
@@ -416,6 +423,17 @@ fn spawn_boid(
 
     let initial_color = Color::rgb(random(), random(), random());
 
+    let position = Vec2::new(
+        lerp(
+            config.spawn_range.min.x..=config.spawn_range.max.x,
+            random::<f32>(),
+        ),
+        lerp(
+            config.spawn_range.min.y..=config.spawn_range.max.y,
+            random::<f32>(),
+        ),
+    );
+
     commands
         .entity(entity)
         .insert((
@@ -425,20 +443,15 @@ fn spawn_boid(
                 // material: materials.add(Color::rgb(random(), random(), random())),
                 material: materials.add(initial_color),
                 transform: Transform::from_xyz(
-                    lerp(
-                        config.spawn_range.min.x..=config.spawn_range.max.x,
-                        random::<f32>(),
-                    ),
-                    lerp(
-                        config.spawn_range.min.y..=config.spawn_range.max.y,
-                        random::<f32>(),
-                    ),
+                    position.x,
+                    position.y,
                     // use the entity index for the z value to prevent (war) z-fighting
                     entity.index() as f32 * 0.001,
                 ),
                 ..default()
             },
             Boid {
+                position,
                 velocity: Vec2 {
                     x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
                     y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
@@ -450,11 +463,9 @@ fn spawn_boid(
         .add_child(visible_range);
 }
 
-fn boid_movement(time: Res<Time>, mut boids: Query<(&Boid, &mut Transform)>) {
-    for (boid, mut transform) in boids.iter_mut() {
-        let new_pos = transform.translation.xy() + boid.velocity * time.delta().as_secs_f32();
-        transform.translation.x = new_pos.x;
-        transform.translation.y = new_pos.y;
+fn boid_movement(time: Res<Time>, mut boids: Query<&mut Boid>) {
+    for mut boid in boids.iter_mut() {
+        boid.position = boid.position + boid.velocity * time.delta().as_secs_f32();
     }
 }
 
@@ -466,15 +477,15 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
 }
 
 fn boid_flocking_behaviors(
-    mut boids: Query<(Entity, &mut Boid, &Transform)>,
+    mut boids: Query<(Entity, &mut Boid)>,
     tree_jail: Query<&TreeJail>,
     config: Query<&BoidConfiguration>,
 ) {
     let config = config.single();
     let tree_jail = tree_jail.single();
-    for (entity, mut boid, transform) in boids.iter_mut() {
+    for (entity, mut boid) in boids.iter_mut() {
         // tree_jail.quadtree
-        let position = transform.translation.xy();
+        let position = boid.position;
         let max_range = config.protected_range.max(config.visible_range);
         let min = position - (max_range / 2.0);
         let max = position + (max_range / 2.0);
@@ -514,8 +525,7 @@ fn boid_flocking_behaviors(
 
             // cohesion
             position_avg /= boids_in_visible_range as f32;
-            boid.velocity = boid.velocity
-                + (position_avg - transform.translation.xy()) * config.centering_factor
+            boid.velocity = boid.velocity + (position_avg - position) * config.centering_factor
         }
     }
 }
@@ -620,14 +630,14 @@ struct EntityWrapper {
 }
 fn populate_quadtree(
     mut tree_jail: Query<&mut TreeJail>,
-    boids: Query<(Entity, &Boid, &Transform), With<Boid>>,
+    boids: Query<(Entity, &Boid), With<Boid>>,
 ) {
     let mut tree_jail = tree_jail.single_mut();
     tree_jail.quadtree =
         quadtree::Quadtree::new(Rect::new(-10000.0, -10000.0, 10000.0, 10000.0), 1);
-    for (entity, boid, transform) in boids.iter() {
+    for (entity, boid) in boids.iter() {
         tree_jail.quadtree.insert(
-            transform.translation.xy(),
+            boid.position,
             EntityWrapper {
                 entity,
                 velocity: boid.velocity,
@@ -678,4 +688,11 @@ fn render_quadtree(
     }
 
     commands.entity(entity).replace_children(&children);
+}
+
+fn update_boids_transform(mut boids: Query<(&Boid, &mut Transform)>) {
+    for (boid, mut transform) in boids.iter_mut() {
+        transform.translation.x = boid.position.x;
+        transform.translation.y = boid.position.y;
+    }
 }
