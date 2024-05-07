@@ -1,6 +1,3 @@
-use bevy::app::PluginGroupBuilder;
-use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
-use bevy::render::RenderPlugin;
 use bevy::window::close_on_esc;
 use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
@@ -9,25 +6,17 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_prototype_lyon::prelude::*;
 use rand::random;
 
-use crate::quadtree::Quadtree;
+mod config;
+mod environ;
+mod quadtree;
+mod render_range;
 
-pub mod quadtree;
-
-#[cfg(target_os = "windows")]
-fn default_plugins() -> PluginGroupBuilder {
-    DefaultPlugins.set(RenderPlugin {
-        render_creation: RenderCreation::Automatic(WgpuSettings {
-            backends: Some(Backends::VULKAN),
-            ..default()
-        }),
-        ..default()
-    })
-}
-
-#[cfg(target_arch = "wasm32")]
-fn default_plugins() -> PluginGroupBuilder {
-    DefaultPlugins.build()
-}
+use config::{BoidConfiguration, ColorType};
+use environ::default_plugins;
+use quadtree::Quadtree;
+use render_range::{
+    boid_update_range_path, boid_update_range_visibility, BoidProtectedRange, BoidVisibleRange,
+};
 
 fn main() {
     App::new()
@@ -42,8 +31,10 @@ fn main() {
                 close_on_esc,
                 render_quadtree,
                 boids_ui,
-                boid_update_protected_ranges,
-                boid_update_visible_ranges,
+                boid_update_range_visibility::<BoidProtectedRange>,
+                boid_update_range_path::<BoidProtectedRange>,
+                boid_update_range_visibility::<BoidVisibleRange>,
+                boid_update_range_path::<BoidVisibleRange>,
                 boid_rotation,
                 boid_update_colors,
                 update_boids_transform,
@@ -106,64 +97,6 @@ fn setup(
         .insert(color);
 
     commands.spawn_empty().insert(config);
-}
-
-#[derive(Component, Debug)]
-struct BoidConfiguration {
-    spawn_count: u32,
-    spawn_range: Rect,
-    turn_factor: f32,
-    boid_bounds: Rect,
-    visible_range: f32,
-    protected_range: f32,
-    avoid_factor: f32,
-    centering_factor: f32,
-    matching_factor: f32,
-    max_speed: f32,
-    min_speed: f32,
-
-    render_quadtree: bool,
-    render_protected_range: bool,
-    render_visible_range: bool,
-
-    update_color_sample_rate: f32,
-    update_color_type: ColorType,
-}
-
-impl Default for BoidConfiguration {
-    fn default() -> Self {
-        BoidConfiguration {
-            spawn_count: 100,
-            spawn_range: Rect {
-                min: Vec2::new(-200.0, -200.0),
-                max: Vec2::new(200.0, 200.0),
-            },
-
-            boid_bounds: Rect {
-                min: Vec2::new(-200.0, -200.0),
-                max: Vec2::new(200.0, 200.0),
-            },
-
-            turn_factor: 1.2,
-
-            visible_range: 100.0,
-            protected_range: 40.0,
-
-            centering_factor: 0.0005,
-            avoid_factor: 0.05,
-            matching_factor: 0.05,
-
-            max_speed: 100.0,
-            min_speed: 2.0,
-
-            render_quadtree: false,
-            render_protected_range: false,
-            render_visible_range: false,
-
-            update_color_sample_rate: 0.0,
-            update_color_type: ColorType::Synthwave,
-        }
-    }
 }
 
 fn boids_ui(
@@ -284,80 +217,12 @@ fn boids_ui(
     });
 }
 
-fn boid_update_protected_ranges(
-    config: Query<&BoidConfiguration>,
-    mut ranges: Query<(&mut Visibility, &mut Path), With<BoidProtectedRange>>,
-) {
-    let config = config.single();
-
-    let protected_visibility = if config.render_protected_range {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
-
-    let shape = shapes::Circle {
-        center: Vec2::ZERO,
-        radius: config.protected_range,
-        ..default()
-    };
-
-    for (mut visibility, mut path) in ranges.iter_mut() {
-        *visibility = protected_visibility;
-    }
-
-    if !config.render_protected_range {
-        return;
-    }
-
-    for (mut visibility, mut path) in ranges.iter_mut() {
-        *path = GeometryBuilder::build_as(&shape);
-    }
-}
-
-fn boid_update_visible_ranges(
-    config: Query<&BoidConfiguration>,
-    mut ranges: Query<(&mut Visibility, &mut Path), With<BoidVisibleRange>>,
-) {
-    let config = config.single();
-
-    let visual_visibility = if config.render_visible_range {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
-
-    let shape = shapes::Circle {
-        center: Vec2::ZERO,
-        radius: config.visible_range,
-        ..default()
-    };
-
-    for (mut visibility, mut path) in ranges.iter_mut() {
-        *visibility = visual_visibility;
-    }
-
-    if !config.render_visible_range {
-        return;
-    }
-
-    for (mut visibility, mut path) in ranges.iter_mut() {
-        *path = GeometryBuilder::build_as(&shape);
-    }
-}
-
 #[derive(Component, Default)]
 struct Boid {
     position: Vec2,
     velocity: Vec2,
     initial_color: Color,
 }
-
-#[derive(Component, Default)]
-struct BoidProtectedRange;
-
-#[derive(Component, Default)]
-struct BoidVisibleRange;
 
 fn spawn_1000(
     mut commands: Commands,
@@ -550,14 +415,6 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
             );
         }
     }
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum ColorType {
-    Initial,
-    Synthwave,
-    Pastel,
-    PrimaryRGB,
 }
 
 fn boid_update_colors(
