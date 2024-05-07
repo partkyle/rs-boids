@@ -304,6 +304,13 @@ fn boid_update_protected_ranges(
 
     for (mut visibility, mut path) in ranges.iter_mut() {
         *visibility = protected_visibility;
+    }
+
+    if !config.render_protected_range {
+        return;
+    }
+
+    for (mut visibility, mut path) in ranges.iter_mut() {
         *path = GeometryBuilder::build_as(&shape);
     }
 }
@@ -328,6 +335,13 @@ fn boid_update_visible_ranges(
 
     for (mut visibility, mut path) in ranges.iter_mut() {
         *visibility = visual_visibility;
+    }
+
+    if !config.render_visible_range {
+        return;
+    }
+
+    for (mut visibility, mut path) in ranges.iter_mut() {
         *path = GeometryBuilder::build_as(&shape);
     }
 }
