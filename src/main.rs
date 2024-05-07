@@ -280,10 +280,6 @@ fn boids_ui(
                 ColorType::PrimaryRGB,
                 "PrimaryRGB",
             );
-
-            if config.update_color_sample_rate == 0.0 {
-                config.update_color_type = ColorType::Initial;
-            }
         });
     });
 }
