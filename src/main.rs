@@ -109,7 +109,6 @@ struct BoidConfiguration {
     render_protected_range: bool,
     render_visible_range: bool,
 
-    update_colors: bool,
     update_color_sample_rate: f32,
     update_color_type: ColorType,
 }
@@ -144,8 +143,7 @@ impl Default for BoidConfiguration {
             render_protected_range: false,
             render_visible_range: false,
 
-            update_colors: false,
-            update_color_sample_rate: 0.1,
+            update_color_sample_rate: 0.0,
             update_color_type: ColorType::Synthwave,
         }
     }
@@ -246,7 +244,6 @@ fn boids_ui(
             ui.checkbox(&mut config.render_visible_range, "render_visible_range");
             ui.end_row();
 
-            ui.checkbox(&mut config.update_colors, "update_colors");
             ui.label("update_color_sample_rate");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.update_color_sample_rate,
@@ -254,6 +251,7 @@ fn boids_ui(
             ));
             ui.end_row();
 
+            ui.radio_value(&mut config.update_color_type, ColorType::Initial, "Initial");
             ui.radio_value(
                 &mut config.update_color_type,
                 ColorType::Synthwave,
@@ -265,6 +263,10 @@ fn boids_ui(
                 ColorType::PrimaryRGB,
                 "PrimaryRGB",
             );
+
+            if config.update_color_sample_rate == 0.0 {
+                config.update_color_type = ColorType::Initial;
+            }
         });
     });
 }
@@ -320,6 +322,7 @@ fn boid_update_visible_ranges(
 #[derive(Component, Default)]
 struct Boid {
     velocity: Vec2,
+    initial_color: Color,
 }
 
 #[derive(Component, Default)]
@@ -387,6 +390,8 @@ fn spawn_boid(
         ))
         .id();
 
+    let initial_color = Color::rgb(random(), random(), random());
+
     commands
         .entity(entity)
         .insert((
@@ -394,7 +399,7 @@ fn spawn_boid(
             ColorMesh2dBundle {
                 mesh: Mesh2dHandle(bvd.shape.clone()),
                 // material: materials.add(Color::rgb(random(), random(), random())),
-                material: materials.add(Color::rgb(random(), random(), random())),
+                material: materials.add(initial_color),
                 transform: Transform::from_xyz(
                     lerp(
                         config.spawn_range.min.x..=config.spawn_range.max.x,
@@ -414,7 +419,7 @@ fn spawn_boid(
                     x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
                     y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
                 },
-                ..default()
+                initial_color,
             },
         ))
         .add_child(protected_range)
@@ -505,6 +510,7 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum ColorType {
+    Initial,
     Synthwave,
     Pastel,
     PrimaryRGB,
@@ -517,14 +523,17 @@ fn boid_update_colors(
 ) {
     let config = config.single();
 
-    if !config.update_colors {
+    if config.update_color_sample_rate == 0.0 {
         return;
     }
 
     for (boid, color) in boids.iter() {
-        if random::<f32>() < config.update_color_sample_rate {
+        if random::<f32>() <= config.update_color_sample_rate {
             if let Some(color) = materials.get_mut(color.id()) {
                 match config.update_color_type {
+                    ColorType::Initial => {
+                        color.color = boid.initial_color;
+                    }
                     ColorType::Synthwave => {
                         let r: f32 = boid.velocity.x.abs() / config.max_speed;
                         let g = boid.velocity.y.abs() / config.max_speed;
