@@ -3,20 +3,19 @@ use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_prototype_lyon::prelude::*;
 use rand::random;
 
 mod config;
 mod environ;
 mod quadtree;
-mod render_range;
+mod quadtree_gizmos;
+mod range_gizmos;
 
 use config::{BoidConfiguration, ColorType};
 use environ::default_plugins;
 use quadtree::Quadtree;
-use render_range::{
-    boid_update_range_path, boid_update_range_visibility, BoidProtectedRange, BoidVisibleRange,
-};
+use quadtree_gizmos::render_quadtree;
+use range_gizmos::boid_draw_range_gizmos;
 
 #[derive(Resource, Deref, DerefMut)]
 struct QuadtreeJail(Quadtree<EntityWrapper>);
@@ -25,7 +24,6 @@ fn main() {
     App::new()
         .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
-        .add_plugins(ShapePlugin)
         .add_plugins(WorldInspectorPlugin::new())
         .insert_resource(QuadtreeJail(quadtree::Quadtree::new(
             Rect::new(-10000.0, -10000.0, 10000.0, 10000.0),
@@ -38,10 +36,7 @@ fn main() {
                 close_on_esc,
                 render_quadtree,
                 boids_ui,
-                boid_update_range_visibility::<BoidProtectedRange>,
-                boid_update_range_path::<BoidProtectedRange>,
-                boid_update_range_visibility::<BoidVisibleRange>,
-                boid_update_range_path::<BoidVisibleRange>,
+                boid_draw_range_gizmos,
                 boid_rotation,
                 boid_update_colors,
                 update_boids_transform,
@@ -239,57 +234,6 @@ fn spawn_boid(
 ) {
     let entity = commands.spawn_empty().id();
 
-    let shape = shapes::Circle {
-        center: Vec2::ZERO,
-        radius: config.protected_range,
-        ..default()
-    };
-
-    let protected_range = commands
-        .spawn((
-            Name::new("protected_range"),
-            ShapeBundle {
-                path: GeometryBuilder::build_as(&shape),
-                spatial: SpatialBundle {
-                    visibility: if config.render_protected_range {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    },
-                    ..default()
-                },
-                ..default()
-            },
-            Stroke::new(Color::RED, 1.0),
-            BoidProtectedRange,
-        ))
-        .id();
-
-    let shape = shapes::Circle {
-        center: Vec2::ZERO,
-        radius: config.visible_range,
-        ..default()
-    };
-    let visible_range = commands
-        .spawn((
-            Name::new("visible_range"),
-            ShapeBundle {
-                path: GeometryBuilder::build_as(&shape),
-                spatial: SpatialBundle {
-                    visibility: if config.render_visible_range {
-                        Visibility::Inherited
-                    } else {
-                        Visibility::Hidden
-                    },
-                    ..default()
-                },
-                ..default()
-            },
-            Stroke::new(Color::GREEN, 1.0),
-            BoidVisibleRange,
-        ))
-        .id();
-
     let initial_color = Color::rgb(random(), random(), random());
 
     let position = Vec2::new(
@@ -303,33 +247,29 @@ fn spawn_boid(
         ),
     );
 
-    commands
-        .entity(entity)
-        .insert((
-            Name::new("boid"),
-            ColorMesh2dBundle {
-                mesh: Mesh2dHandle(bvd.shape.clone()),
-                // material: materials.add(Color::rgb(random(), random(), random())),
-                material: materials.add(initial_color),
-                transform: Transform::from_xyz(
-                    position.x,
-                    position.y,
-                    // use the entity index for the z value to prevent (war) z-fighting
-                    entity.index() as f32 * 0.001,
-                ),
-                ..default()
+    commands.entity(entity).insert((
+        Name::new("boid"),
+        ColorMesh2dBundle {
+            mesh: Mesh2dHandle(bvd.shape.clone()),
+            // material: materials.add(Color::rgb(random(), random(), random())),
+            material: materials.add(initial_color),
+            transform: Transform::from_xyz(
+                position.x,
+                position.y,
+                // use the entity index for the z value to prevent (war) z-fighting
+                entity.index() as f32 * 0.001,
+            ),
+            ..default()
+        },
+        Boid {
+            position,
+            velocity: Vec2 {
+                x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+                y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
             },
-            Boid {
-                position,
-                velocity: Vec2 {
-                    x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                    y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                },
-                initial_color,
-            },
-        ))
-        .add_child(protected_range)
-        .add_child(visible_range);
+            initial_color,
+        },
+    ));
 }
 
 fn boid_movement(time: Res<Time>, mut boids: Query<&mut Boid>) {
@@ -486,47 +426,6 @@ fn populate_quadtree(mut qt: ResMut<QuadtreeJail>, boids: Query<(Entity, &Boid),
                 velocity: boid.velocity,
             },
         );
-    }
-}
-
-#[derive(Component)]
-struct QuadtreeRectangle;
-
-fn render_quadtree(
-    mut commands: Commands,
-    config: Query<&BoidConfiguration>,
-    qt: Res<QuadtreeJail>,
-    rectangles: Query<Entity, With<QuadtreeRectangle>>,
-) {
-    let config = config.single();
-
-    for e in rectangles.iter() {
-        commands.entity(e).despawn_recursive();
-    }
-
-    if !config.render_quadtree {
-        return;
-    }
-
-    for b in qt.get_all_bounds() {
-        let size = b.max - b.min;
-        let shape = shapes::Rectangle {
-            extents: size,
-            origin: RectangleOrigin::BottomLeft,
-            ..default()
-        };
-        commands.spawn_empty().insert((
-            ShapeBundle {
-                path: GeometryBuilder::build_as(&shape),
-                spatial: SpatialBundle {
-                    transform: Transform::from_xyz(b.min.x, b.min.y, -1.0),
-                    ..default()
-                },
-                ..default()
-            },
-            Stroke::new(Color::GREEN, 1.0),
-            QuadtreeRectangle,
-        ));
     }
 }
 
