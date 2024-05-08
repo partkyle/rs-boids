@@ -5,6 +5,7 @@ use bevy::{
 
 #[derive(Component, Debug)]
 pub struct BoidConfiguration {
+    pub total_boids: u32,
     pub spawn_count: u32,
     pub spawn_range: Rect,
     pub turn_factor: f32,
@@ -28,6 +29,7 @@ pub struct BoidConfiguration {
 impl Default for BoidConfiguration {
     fn default() -> Self {
         BoidConfiguration {
+            total_boids: 0,
             spawn_count: 100,
             spawn_range: Rect {
                 min: Vec2::new(-200.0, -200.0),

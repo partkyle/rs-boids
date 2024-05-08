@@ -100,7 +100,12 @@ fn boids_ui(
     let bvd = bvd.single();
 
     egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
-        egui::Grid::new("something").show(ui, |ui| {
+        ui.heading("Spawning Fields");
+        egui::Grid::new("spawn_fields").show(ui, |ui| {
+            ui.label("total boids");
+            ui.label(config.total_boids.to_string());
+            ui.end_row();
+
             ui.label("spawn count");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.spawn_count,
@@ -109,7 +114,7 @@ fn boids_ui(
 
             if ui.button("spawn").clicked() {
                 for _ in 0..config.spawn_count {
-                    spawn_boid(&mut commands, bvd, &config, &mut materials);
+                    spawn_boid(&mut commands, bvd, &mut config, &mut materials);
                 }
             }
 
@@ -117,9 +122,13 @@ fn boids_ui(
                 for entity in boids.iter() {
                     commands.entity(entity).despawn_recursive();
                 }
+                config.total_boids = 0;
             }
             ui.end_row();
+        });
 
+        ui.heading("Simulation Fields");
+        egui::Grid::new("simulation_fields").show(ui, |ui| {
             ui.label("turn_factor");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.turn_factor,
@@ -177,19 +186,22 @@ fn boids_ui(
                 0.0..=max,
             ));
             ui.end_row();
+        });
 
-            ui.checkbox(&mut config.render_quadtree, "render_quadtree");
-            ui.checkbox(&mut config.render_protected_range, "render_protected_range");
-            ui.checkbox(&mut config.render_visible_range, "render_visible_range");
-            ui.end_row();
+        ui.heading("Gizmos");
+        ui.checkbox(&mut config.render_quadtree, "render_quadtree");
+        ui.checkbox(&mut config.render_protected_range, "render_protected_range");
+        ui.checkbox(&mut config.render_visible_range, "render_visible_range");
 
+        ui.heading("Boid Colors");
+        ui.horizontal(|ui| {
             ui.label("update_color_sample_rate");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.update_color_sample_rate,
                 0.0..=1.0f32,
             ));
-            ui.end_row();
-
+        });
+        ui.horizontal(|ui| {
             ui.radio_value(&mut config.update_color_type, ColorType::Initial, "Initial");
             ui.radio_value(
                 &mut config.update_color_type,
@@ -216,20 +228,20 @@ struct Boid {
 fn spawn_1000(
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    config: Query<&BoidConfiguration>,
+    mut config: Query<&mut BoidConfiguration>,
     bvd: Query<&BoidVisualData>,
 ) {
-    let config = config.single();
+    let mut config = config.single_mut();
     let bvd = bvd.single();
     for _ in 0..1000 {
-        spawn_boid(&mut commands, bvd, config, &mut materials)
+        spawn_boid(&mut commands, bvd, &mut config, &mut materials)
     }
 }
 
 fn spawn_boid(
     commands: &mut Commands,
     bvd: &BoidVisualData,
-    config: &BoidConfiguration,
+    config: &mut BoidConfiguration,
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
     let entity = commands.spawn_empty().id();
@@ -270,6 +282,8 @@ fn spawn_boid(
             initial_color,
         },
     ));
+
+    config.total_boids += 1;
 }
 
 fn boid_movement(time: Res<Time>, mut boids: Query<&mut Boid>) {
