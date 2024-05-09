@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.13.2", features = ["trace_tracy"] }
 bevy_egui = "0.27.0"
-rand = "0.9.0-alpha.1"
+rand = "0.8.5"
 bevy-inspector-egui = "0.24.0"

@@ -39,6 +39,7 @@ fn main() {
                 render_quadtree,
                 boids_ui,
                 boid_draw_range_gizmos,
+                render_bounds_gizmo,
                 boid_rotation,
                 boid_update_colors,
                 update_boids_transform,
@@ -202,6 +203,7 @@ fn boids_ui(
         });
 
         ui.heading("Gizmos");
+        ui.checkbox(&mut config.render_bounds, "render_bounds");
         ui.checkbox(&mut config.render_quadtree, "render_quadtree");
         ui.checkbox(&mut config.render_protected_range, "render_protected_range");
         ui.checkbox(&mut config.render_visible_range, "render_visible_range");
@@ -461,4 +463,16 @@ fn update_boids_transform(mut boids: Query<(&Boid, &mut Transform)>) {
         transform.translation.x = boid.position.x;
         transform.translation.y = boid.position.y;
     }
+}
+
+pub fn render_bounds_gizmo(config: Query<&BoidConfiguration>, mut gizmos: Gizmos) {
+    let config = config.single();
+
+    if !config.render_bounds {
+        return;
+    }
+
+    let size = config.boid_bounds.max - config.boid_bounds.min;
+    let position = config.boid_bounds.min + size * 0.5;
+    gizmos.rect_2d(position, 0.0, size, Color::WHITE.with_a(0.1));
 }

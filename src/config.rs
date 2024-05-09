@@ -18,6 +18,7 @@ pub struct BoidConfiguration {
     pub max_speed: f32,
     pub min_speed: f32,
 
+    pub render_bounds: bool,
     pub render_quadtree: bool,
     pub render_protected_range: bool,
     pub render_visible_range: bool,
@@ -53,6 +54,7 @@ impl Default for BoidConfiguration {
             max_speed: 100.0,
             min_speed: 2.0,
 
+            render_bounds: false,
             render_quadtree: false,
             render_protected_range: false,
             render_visible_range: false,
