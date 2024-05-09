@@ -13,7 +13,7 @@ pub fn render_quadtree(
 ) {
     let config = config.single();
 
-    if !config.render_quadtree {
+    if !config.quadtree_gizmo.enabled {
         return;
     }
 
@@ -21,6 +21,11 @@ pub fn render_quadtree(
         let size = b.max - b.min;
         let origin = b.min + size * 0.5;
 
-        gizmos.rect_2d(origin, 0.0, size, Color::GREEN.with_a(0.1));
+        gizmos.rect_2d(
+            origin,
+            0.0,
+            size,
+            Color::rgba_from_array(config.quadtree_gizmo.color_rgba),
+        );
     }
 }

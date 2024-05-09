@@ -18,10 +18,10 @@ pub struct BoidConfiguration {
     pub max_speed: f32,
     pub min_speed: f32,
 
-    pub render_bounds: bool,
-    pub render_quadtree: bool,
-    pub render_protected_range: bool,
-    pub render_visible_range: bool,
+    pub bounds_gizmo: BoidGizmoConfig,
+    pub quadtree_gizmo: BoidGizmoConfig,
+    pub protected_range_gizmo: BoidGizmoConfig,
+    pub visible_range_gizmo: BoidGizmoConfig,
 
     pub update_color_sample_rate: f32,
     pub update_color_type: ColorType,
@@ -54,10 +54,10 @@ impl Default for BoidConfiguration {
             max_speed: 100.0,
             min_speed: 2.0,
 
-            render_bounds: false,
-            render_quadtree: false,
-            render_protected_range: false,
-            render_visible_range: false,
+            bounds_gizmo: BoidGizmoConfig::new(false, [0.8, 0.6, 0.8, 1.0]),
+            quadtree_gizmo: BoidGizmoConfig::new(false, [0.0, 1.0, 0.0, 0.1]),
+            protected_range_gizmo: BoidGizmoConfig::new(false, [1.0, 0.0, 0.0, 0.1]),
+            visible_range_gizmo: BoidGizmoConfig::new(false, [0.6, 1.0, 0.0, 0.1]),
 
             update_color_sample_rate: 0.0,
             update_color_type: ColorType::Synthwave,
@@ -71,4 +71,19 @@ pub enum ColorType {
     Synthwave,
     Pastel,
     PrimaryRGB,
+}
+
+#[derive(Default, Debug)]
+pub struct BoidGizmoConfig {
+    pub enabled: bool,
+    pub color_rgba: [f32; 4],
+}
+
+impl BoidGizmoConfig {
+    pub fn new(enabled: bool, color_rgba: [f32; 4]) -> Self {
+        Self {
+            enabled,
+            color_rgba,
+        }
+    }
 }

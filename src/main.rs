@@ -12,7 +12,7 @@ mod quadtree;
 mod quadtree_gizmos;
 mod range_gizmos;
 
-use config::{BoidConfiguration, ColorType};
+use config::{BoidConfiguration, BoidGizmoConfig, ColorType};
 use environ::default_plugins;
 use quadtree::Quadtree;
 use quadtree_gizmos::render_quadtree;
@@ -202,11 +202,19 @@ fn boids_ui(
             ui.end_row();
         });
 
-        ui.heading("Gizmos");
-        ui.checkbox(&mut config.render_bounds, "render_bounds");
-        ui.checkbox(&mut config.render_quadtree, "render_quadtree");
-        ui.checkbox(&mut config.render_protected_range, "render_protected_range");
-        ui.checkbox(&mut config.render_visible_range, "render_visible_range");
+        egui::Grid::new("gizmos").show(ui, |ui| {
+            ui.heading("Gizmos");
+            ui.end_row();
+
+            boid_ui_for_gizmos(ui, "render_bounds", &mut config.bounds_gizmo);
+            boid_ui_for_gizmos(ui, "render_quadtree", &mut config.quadtree_gizmo);
+            boid_ui_for_gizmos(
+                ui,
+                "render_protected_range",
+                &mut config.protected_range_gizmo,
+            );
+            boid_ui_for_gizmos(ui, "render_visible_range", &mut config.visible_range_gizmo);
+        });
 
         ui.heading("Boid Colors");
         ui.horizontal(|ui| {
@@ -231,6 +239,12 @@ fn boids_ui(
             );
         });
     });
+}
+
+fn boid_ui_for_gizmos(ui: &mut bevy_egui::egui::Ui, text: &str, val: &mut BoidGizmoConfig) {
+    ui.checkbox(&mut val.enabled, text);
+    ui.color_edit_button_rgba_unmultiplied(&mut val.color_rgba);
+    ui.end_row();
 }
 
 #[derive(Component, Default)]
@@ -468,11 +482,16 @@ fn update_boids_transform(mut boids: Query<(&Boid, &mut Transform)>) {
 pub fn render_bounds_gizmo(config: Query<&BoidConfiguration>, mut gizmos: Gizmos) {
     let config = config.single();
 
-    if !config.render_bounds {
+    if !config.bounds_gizmo.enabled {
         return;
     }
 
     let size = config.boid_bounds.max - config.boid_bounds.min;
     let position = config.boid_bounds.min + size * 0.5;
-    gizmos.rect_2d(position, 0.0, size, Color::WHITE.with_a(0.1));
+    gizmos.rect_2d(
+        position,
+        0.0,
+        size,
+        Color::rgba_from_array(config.bounds_gizmo.color_rgba),
+    );
 }
