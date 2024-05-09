@@ -1,3 +1,4 @@
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::window::close_on_esc;
 use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
@@ -25,6 +26,7 @@ fn main() {
         .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
         .add_plugins(WorldInspectorPlugin::new())
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .insert_resource(QuadtreeJail(quadtree::Quadtree::new(
             Rect::new(-10000.0, -10000.0, 10000.0, 10000.0),
             1,
@@ -95,11 +97,22 @@ fn boids_ui(
     mut materials: ResMut<Assets<ColorMaterial>>,
     boids: Query<Entity, With<Boid>>,
     bvd: Query<&BoidVisualData>,
+    diagnostics: Res<DiagnosticsStore>,
 ) {
     let mut config = config.single_mut();
     let bvd = bvd.single();
 
     egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
+        if let Some(fps) = diagnostics
+            .get(&FrameTimeDiagnosticsPlugin::FPS)
+            .and_then(|fps| fps.smoothed())
+        {
+            egui::Grid::new("fps").show(ui, |ui| {
+                ui.label("fps");
+                ui.label(format!("{:.2}", fps));
+            });
+        }
+
         ui.heading("Spawning Fields");
         egui::Grid::new("spawn_fields").show(ui, |ui| {
             ui.label("total boids");
