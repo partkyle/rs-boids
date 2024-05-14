@@ -1,4 +1,5 @@
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::utils::hashbrown::HashMap;
 use bevy::window::close_on_esc;
 use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
@@ -21,12 +22,19 @@ use range_gizmos::boid_draw_range_gizmos;
 #[derive(Resource, Deref, DerefMut)]
 struct QuadtreeJail(Quadtree<EntityWrapper>);
 
+#[derive(States, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Clone)]
+enum SpatialState {
+    QuadTree,
+    SpatialHash,
+}
+
 fn main() {
     App::new()
         .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .insert_state(SpatialState::SpatialHash)
         .insert_resource(QuadtreeJail(quadtree::Quadtree::new(
             Rect::new(-10000.0, -10000.0, 10000.0, 10000.0),
             1,
@@ -38,21 +46,20 @@ fn main() {
                 close_on_esc,
                 render_quadtree,
                 boids_ui,
+                boid_select_randomly,
+                highlight_boid,
+                (populate_quadtree, boid_flocking_behaviors)
+                    .run_if(in_state(SpatialState::QuadTree)),
+                (boid_flocking_spatial_hash).run_if(in_state(SpatialState::SpatialHash)),
+                boid_turn_factor,
+                boid_speed_up,
+                boid_movement,
                 boid_draw_range_gizmos,
                 render_bounds_gizmo,
                 boid_rotation,
                 boid_update_colors,
+                boid_highlight_neighbors,
                 update_boids_transform,
-            ),
-        )
-        .add_systems(
-            FixedUpdate,
-            (
-                populate_quadtree,
-                boid_flocking_behaviors,
-                boid_turn_factor,
-                boid_speed_up,
-                boid_movement,
             ),
         )
         .run();
@@ -99,6 +106,8 @@ fn boids_ui(
     boids: Query<Entity, With<Boid>>,
     bvd: Query<&BoidVisualData>,
     diagnostics: Res<DiagnosticsStore>,
+    spatial_state: Res<State<SpatialState>>,
+    mut next_spatial_state: ResMut<NextState<SpatialState>>,
 ) {
     let mut config = config.single_mut();
     let bvd = bvd.single();
@@ -113,6 +122,16 @@ fn boids_ui(
                 ui.label(format!("{:.2}", fps));
             });
         }
+
+        ui.horizontal(|ui| {
+            let mut current = spatial_state.get().clone();
+            ui.radio_value(&mut current, SpatialState::QuadTree, "QuadTree");
+            ui.radio_value(&mut current, SpatialState::SpatialHash, "SpatialHash");
+
+            if current != *spatial_state.get() {
+                next_spatial_state.set(current);
+            }
+        });
 
         ui.heading("Spawning Fields");
         egui::Grid::new("spawn_fields").show(ui, |ui| {
@@ -275,7 +294,7 @@ fn spawn_boid(
 ) {
     let entity = commands.spawn_empty().id();
 
-    let initial_color = Color::rgb(random(), random(), random());
+    let initial_color = Color::rgb(0.0, random(), random());
 
     let position = Vec2::new(
         lerp(
@@ -329,27 +348,36 @@ fn boid_rotation(mut boids: Query<(&Boid, &mut Transform)>) {
 }
 
 fn boid_flocking_behaviors(
-    mut boids: Query<(Entity, &mut Boid)>,
+    mut commands: Commands,
+    mut boids: Query<(Entity, &mut Boid, Option<&Highlighted>)>,
     qt: Res<QuadtreeJail>,
     config: Query<&BoidConfiguration>,
+    old_neighbors: Query<Entity, With<HighlightedNeighbor>>,
 ) {
+    for entity in old_neighbors.iter() {
+        commands.entity(entity).remove::<HighlightedNeighbor>();
+    }
+
     let config = config.single();
-    for (entity, mut boid) in boids.iter_mut() {
+    for (entity, mut boid, highlighted) in boids.iter_mut() {
         // tree_jail.quadtree
         let position = boid.position;
         let max_range = config.protected_range.max(config.visible_range);
-        let min = position - (max_range / 2.0);
-        let max = position + (max_range / 2.0);
+        let min = position - max_range;
+        let max = position + max_range;
 
-        let mut results = vec![];
-        qt.query(&Rect { min, max }, &mut results);
+        let neighbor_boids = qt.query(Rect { min, max });
+
+        if highlighted.is_some() {
+            println!("neighbors>?: {}", neighbor_boids.len());
+        }
 
         let mut dclose = Vec2::ZERO;
 
         let mut boids_in_visible_range = 0;
         let mut velocity_avg = Vec2::ZERO;
         let mut position_avg = Vec2::ZERO;
-        for (other_position, other_entity) in results {
+        for (other_position, other_entity) in neighbor_boids {
             if entity == other_entity.entity {
                 continue;
             }
@@ -364,6 +392,12 @@ fn boid_flocking_behaviors(
                 velocity_avg += other_entity.velocity;
 
                 position_avg += other_position;
+
+                if highlighted.is_some() {
+                    commands
+                        .entity(other_entity.entity)
+                        .insert(HighlightedNeighbor);
+                }
             }
         }
 
@@ -381,6 +415,221 @@ fn boid_flocking_behaviors(
     }
 }
 
+fn hash_coords(x: u32, y: u32, num_cells: u32) -> u32 {
+    let h = (x as u64 * 92837111) ^ (y as u64 * 689287499);
+    return (h % num_cells as u64) as u32;
+}
+
+fn find_cell_position(position: Vec2, bounds: Rect, cell_size: f32) -> Option<UVec2> {
+    let from_bounds = position - bounds.min;
+    if from_bounds.x < 0.0
+        || from_bounds.y < 0.0
+        || from_bounds.x >= bounds.size().x
+        || from_bounds.y >= bounds.size().y
+    {
+        // //skip
+        return None;
+    }
+
+    let cell_x = (from_bounds.x / cell_size).round();
+    let cell_y = (from_bounds.y / cell_size).round();
+
+    Some(UVec2::new(cell_x as u32, cell_y as u32))
+}
+
+#[derive(Component)]
+struct Highlighted;
+
+#[derive(Component)]
+struct HighlightedNeighbor;
+
+fn boid_select_randomly(
+    mut commands: Commands,
+    boids: Query<Entity, (With<Boid>, Without<Highlighted>)>,
+    highlighted: Query<Entity, With<Highlighted>>,
+    keys: Res<ButtonInput<KeyCode>>,
+) {
+    if keys.just_pressed(KeyCode::KeyD) {
+        for entity in highlighted.iter() {
+            commands.entity(entity).remove::<Highlighted>();
+        }
+    }
+    if !keys.just_pressed(KeyCode::Space) {
+        return;
+    }
+
+    for entity in highlighted.iter() {
+        commands.entity(entity).remove::<Highlighted>();
+    }
+
+    for entity in boids.iter() {
+        commands.entity(entity).insert(Highlighted);
+        break;
+    }
+}
+
+fn highlight_boid(
+    highlighted: Query<(Entity, &Boid), With<Highlighted>>,
+    config: Query<&BoidConfiguration>,
+    mut gizmos: Gizmos,
+) {
+    let config = config.single();
+
+    let bounds = Rect::from_corners(config.boid_bounds.min * 12.0, config.boid_bounds.max * 12.0);
+
+    let size = 10.0;
+    let half_size = size / 2.0;
+    let x_cells = (bounds.width() / size).round() as u32;
+    let y_cells = (bounds.height() / size).round() as u32;
+    let cell_size = UVec2::new(x_cells, y_cells);
+
+    let radius = config.protected_range.max(config.visible_range);
+    let neighbors = (radius / size).round() as u32;
+
+    for (_, boid) in highlighted.iter() {
+        gizmos.circle_2d(boid.position, config.visible_range, Color::LIME_GREEN);
+
+        if let Some(cell) = find_cell_position(boid.position, bounds, size) {
+            for y in (cell.y - neighbors).clamp(0, cell_size.y)
+                ..(cell.y + neighbors).clamp(0, cell_size.y)
+            {
+                for x in (cell.x - neighbors).clamp(0, cell_size.x)
+                    ..(cell.x + neighbors).clamp(0, cell_size.x)
+                {
+                    gizmos.rect_2d(
+                        bounds.min + half_size + Vec2::new(x as f32, y as f32) * size,
+                        0.0,
+                        Vec2::splat(size),
+                        Color::RED.with_a(0.1),
+                    );
+                }
+            }
+        }
+    }
+
+    let result = Vec2::new(0.0, 0.0);
+}
+
+fn boid_flocking_spatial_hash(
+    mut commands: Commands,
+    mut boids: Query<(Entity, &mut Boid, Option<&Highlighted>)>,
+    old_neighbors: Query<Entity, With<HighlightedNeighbor>>,
+    config: Query<&BoidConfiguration>,
+    mut gizmos: Gizmos,
+) {
+    for entity in old_neighbors.iter() {
+        commands.entity(entity).remove::<HighlightedNeighbor>();
+    }
+
+    let config = config.single();
+
+    let table_size = config.total_boids;
+
+    let size = 10.0;
+    let half_size = size / 2.0;
+
+    let mut spatial_hash: HashMap<u32, Vec<(Entity, Vec2, Vec2)>> =
+        HashMap::with_capacity(table_size as usize);
+
+    let bounds = Rect::from_corners(config.boid_bounds.min * 12.0, config.boid_bounds.max * 12.0);
+
+    let x_cells = (bounds.width() / size).round() as u32;
+    let y_cells = (bounds.height() / size).round() as u32;
+    let cell_size = UVec2::new(x_cells, y_cells);
+
+    for (entity, boid, _) in boids.iter() {
+        if let Some(cell) = find_cell_position(boid.position, bounds, size) {
+            let key = hash_coords(cell.x, cell.y, cell_size.x * cell_size.y);
+            let push_val = (entity, boid.position, boid.velocity);
+
+            if let Some(val) = spatial_hash.get_mut(&key) {
+                val.push(push_val);
+            } else {
+                let val = vec![push_val];
+                spatial_hash.insert(key, val);
+            }
+        }
+    }
+
+    // for y in 0..y_cells {
+    //     for x in 0..x_cells {
+    //         gizmos.rect_2d(
+    //             config.boid_bounds.min + half_size + Vec2::new(x as f32, y as f32) * size,
+    //             0.0,
+    //             Vec2::splat(size),
+    //             Color::RED,
+    //         );
+    //     }
+    // }
+
+    let radius = config.protected_range.max(config.visible_range);
+    let half_radius = radius / 2.0;
+    let neighbors = (half_radius / size).round() as u32 + 1;
+    for (entity, mut boid, highlighted) in boids.iter_mut() {
+        if let Some(cell) = find_cell_position(boid.position, bounds, size) {
+            let mut results: Vec<(Entity, Vec2, Vec2)> = vec![];
+            for y in (cell.y - neighbors).clamp(0, cell_size.y)
+                ..(cell.y + neighbors).clamp(0, cell_size.y)
+            {
+                for x in (cell.x - neighbors).clamp(0, cell_size.x)
+                    ..(cell.x + neighbors).clamp(0, cell_size.x)
+                {
+                    if let Some(subresults) =
+                        spatial_hash.get(&hash_coords(x, y, cell_size.x * cell_size.y))
+                    {
+                        results.extend(subresults);
+                    }
+                }
+            }
+
+            let mut dclose = Vec2::ZERO;
+            let mut velocity_avg = Vec2::ZERO;
+            let mut position_avg = Vec2::ZERO;
+            let mut boids_in_visible_range = 0;
+
+            if highlighted.is_some() {
+                println!("neighbors>?: {}", results.len());
+            }
+
+            for (other_entity, other_position, other_velocity) in results {
+                if entity == other_entity {
+                    continue;
+                }
+
+                if highlighted.is_some() {
+                    commands.entity(other_entity).insert(HighlightedNeighbor);
+                }
+
+                let distance = boid.position - other_position;
+                if distance.length() <= config.protected_range {
+                    dclose += distance;
+                }
+
+                if distance.length() <= config.visible_range {
+                    boids_in_visible_range += 1;
+                    velocity_avg += other_velocity;
+
+                    position_avg += other_position;
+                }
+            }
+
+            boid.velocity += dclose * config.avoid_factor;
+
+            if boids_in_visible_range > 0 {
+                // alignment
+                velocity_avg /= boids_in_visible_range as f32;
+                boid.velocity =
+                    boid.velocity + (velocity_avg - boid.velocity) * config.matching_factor;
+
+                // cohesion
+                position_avg /= boids_in_visible_range as f32;
+                boid.velocity =
+                    boid.velocity + (position_avg - boid.position) * config.centering_factor
+            }
+        }
+    }
+}
+
 fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&BoidConfiguration>) {
     let config = config.single();
     for mut boid in boids.iter_mut() {
@@ -389,6 +638,31 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
                 boid.velocity.normalize() * config.max_speed,
                 time.delta_seconds(),
             );
+        }
+
+        boid.velocity = boid
+            .velocity
+            .clamp_length(config.min_speed, config.max_speed);
+    }
+}
+
+fn boid_highlight_neighbors(
+    neighbor_boids: Query<&Handle<ColorMaterial>, (With<Boid>, Added<HighlightedNeighbor>)>,
+    boids: Query<(&Handle<ColorMaterial>, &Boid), Without<HighlightedNeighbor>>,
+    mut removed_neighbors: RemovedComponents<HighlightedNeighbor>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for entity in removed_neighbors.read() {
+        if let Ok((material_handle, boid)) = boids.get(entity) {
+            if let Some(color) = materials.get_mut(material_handle) {
+                color.color = boid.initial_color;
+            }
+        }
+    }
+
+    for material_handle in neighbor_boids.iter() {
+        if let Some(color) = materials.get_mut(material_handle) {
+            color.color = Color::RED;
         }
     }
 }
@@ -453,7 +727,7 @@ fn boid_turn_factor(config: Query<&BoidConfiguration>, mut boids: Query<(&mut Bo
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct EntityWrapper {
     entity: Entity,
     velocity: Vec2,
