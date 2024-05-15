@@ -1,6 +1,6 @@
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::utils::hashbrown::HashMap;
-use bevy::window::close_on_esc;
+use bevy::window::{close_on_esc, PrimaryWindow};
 use bevy::{prelude::*, sprite::Mesh2dHandle};
 use bevy_egui::egui::lerp;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -44,22 +44,25 @@ fn main() {
             Update,
             (
                 close_on_esc,
-                render_quadtree,
                 boids_ui,
-                boid_select_randomly,
-                highlight_boid,
-                (populate_quadtree, boid_flocking_behaviors)
-                    .run_if(in_state(SpatialState::QuadTree)),
-                (boid_flocking_spatial_hash).run_if(in_state(SpatialState::SpatialHash)),
-                boid_turn_factor,
-                boid_speed_up,
-                boid_movement,
-                boid_draw_range_gizmos,
-                render_bounds_gizmo,
-                boid_rotation,
-                boid_update_colors,
-                boid_highlight_neighbors,
-                update_boids_transform,
+                (
+                    render_quadtree,
+                    boid_select_randomly,
+                    highlight_boid,
+                    (populate_quadtree, boid_flocking_behaviors)
+                        .run_if(in_state(SpatialState::QuadTree)),
+                    (boid_flocking_spatial_hash).run_if(in_state(SpatialState::SpatialHash)),
+                    boid_turn_factor,
+                    boid_speed_up,
+                    boid_movement,
+                    boid_draw_range_gizmos,
+                    render_bounds_gizmo,
+                    boid_rotation,
+                    boid_update_colors,
+                    boid_highlight_neighbors,
+                    update_boids_transform,
+                )
+                    .after(boids_ui),
             ),
         )
         .run();
@@ -431,8 +434,8 @@ fn find_cell_position(position: Vec2, bounds: Rect, cell_size: f32) -> Option<UV
         return None;
     }
 
-    let cell_x = (from_bounds.x / cell_size).round();
-    let cell_y = (from_bounds.y / cell_size).round();
+    let cell_x = (from_bounds.x / cell_size).floor();
+    let cell_y = (from_bounds.y / cell_size).floor();
 
     Some(UVec2::new(cell_x as u32, cell_y as u32))
 }
@@ -445,26 +448,41 @@ struct HighlightedNeighbor;
 
 fn boid_select_randomly(
     mut commands: Commands,
-    boids: Query<Entity, (With<Boid>, Without<Highlighted>)>,
+    boids: Query<(Entity, &Boid), Without<Highlighted>>,
     highlighted: Query<Entity, With<Highlighted>>,
-    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    q_windows: Query<&bevy::window::Window, With<PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform)>,
 ) {
-    if keys.just_pressed(KeyCode::KeyD) {
+    if mouse.just_pressed(MouseButton::Right) {
         for entity in highlighted.iter() {
             commands.entity(entity).remove::<Highlighted>();
         }
-    }
-    if !keys.just_pressed(KeyCode::Space) {
+
         return;
     }
 
-    for entity in highlighted.iter() {
-        commands.entity(entity).remove::<Highlighted>();
-    }
+    if mouse.just_pressed(MouseButton::Left) {
+        for entity in highlighted.iter() {
+            commands.entity(entity).remove::<Highlighted>();
+        }
 
-    for entity in boids.iter() {
-        commands.entity(entity).insert(Highlighted);
-        break;
+        let (camera, camera_transform) = camera.single();
+        let window = q_windows.single();
+        if let Some(mouse) = window.cursor_position() {
+            if let Some(mouse_ray) = camera.viewport_to_world(camera_transform, mouse) {
+                println!("mouseray:{}", mouse_ray.origin.xy());
+                if let Some((_, entity)) = boids
+                    .iter()
+                    .map(|(entity, boid)| (boid.position.distance(mouse_ray.origin.xy()), entity))
+                    .min_by(|(a, _), (b, _)| a.total_cmp(b))
+                {
+                    commands.entity(entity).insert(Highlighted);
+                }
+            }
+        }
+
+        return;
     }
 }
 
@@ -479,12 +497,12 @@ fn highlight_boid(
 
     let size = 10.0;
     let half_size = size / 2.0;
-    let x_cells = (bounds.width() / size).round() as u32;
-    let y_cells = (bounds.height() / size).round() as u32;
+    let x_cells = (bounds.width() / size).ceil() as u32;
+    let y_cells = (bounds.height() / size).ceil() as u32;
     let cell_size = UVec2::new(x_cells, y_cells);
 
     let radius = config.protected_range.max(config.visible_range);
-    let neighbors = (radius / size).round() as u32;
+    let neighbors = (radius / size).ceil() as u32 + 1;
 
     for (_, boid) in highlighted.iter() {
         gizmos.circle_2d(boid.position, config.visible_range, Color::LIME_GREEN);
@@ -563,8 +581,8 @@ fn boid_flocking_spatial_hash(
     // }
 
     let radius = config.protected_range.max(config.visible_range);
-    let half_radius = radius / 2.0;
-    let neighbors = (half_radius / size).round() as u32 + 1;
+    let neighbors = (radius / size).ceil() as u32 + 1;
+
     for (entity, mut boid, highlighted) in boids.iter_mut() {
         if let Some(cell) = find_cell_position(boid.position, bounds, size) {
             let mut results: Vec<(Entity, Vec2, Vec2)> = vec![];
@@ -596,10 +614,6 @@ fn boid_flocking_spatial_hash(
                     continue;
                 }
 
-                if highlighted.is_some() {
-                    commands.entity(other_entity).insert(HighlightedNeighbor);
-                }
-
                 let distance = boid.position - other_position;
                 if distance.length() <= config.protected_range {
                     dclose += distance;
@@ -610,6 +624,10 @@ fn boid_flocking_spatial_hash(
                     velocity_avg += other_velocity;
 
                     position_avg += other_position;
+
+                    if highlighted.is_some() {
+                        commands.entity(other_entity).insert(HighlightedNeighbor);
+                    }
                 }
             }
 
