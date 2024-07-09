@@ -103,10 +103,10 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, window: Query
 }
 
 fn boids_ui(
-    mut commands: Commands,
+    commands: Commands,
     mut config: Query<&mut BoidConfiguration>,
     mut contexts: EguiContexts,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    materials: ResMut<Assets<ColorMaterial>>,
     boids: Query<Entity, With<Boid>>,
     bvd: Query<&BoidVisualData>,
     diagnostics: Res<DiagnosticsStore>,
@@ -559,7 +559,7 @@ fn boid_flocking_spatial_hash(
     mut boids: Query<(Entity, &mut Boid, Option<&Highlighted>)>,
     old_neighbors: Query<Entity, With<HighlightedNeighbor>>,
     config: Query<&BoidConfiguration>,
-    mut gizmos: Gizmos,
+    gizmos: Gizmos,
 ) {
     for entity in old_neighbors.iter() {
         commands.entity(entity).remove::<HighlightedNeighbor>();

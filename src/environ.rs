@@ -1,7 +1,5 @@
 use bevy::app::PluginGroup;
 use bevy::app::PluginGroupBuilder;
-use bevy::render::settings::Backends;
-use bevy::render::{settings::RenderCreation, settings::WgpuSettings, RenderPlugin};
 use bevy::DefaultPlugins;
 
 #[cfg(target_os = "windows")]
