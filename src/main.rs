@@ -103,18 +103,13 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, window: Query
 }
 
 fn boids_ui(
-    commands: Commands,
     mut config: Query<&mut BoidConfiguration>,
     mut contexts: EguiContexts,
-    materials: ResMut<Assets<ColorMaterial>>,
-    boids: Query<Entity, With<Boid>>,
-    bvd: Query<&BoidVisualData>,
     diagnostics: Res<DiagnosticsStore>,
     spatial_state: Res<State<SpatialState>>,
     mut next_spatial_state: ResMut<NextState<SpatialState>>,
 ) {
     let mut config = config.single_mut();
-    let bvd = bvd.single();
 
     egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
         if let Some(fps) = diagnostics
@@ -139,28 +134,11 @@ fn boids_ui(
 
         ui.heading("Spawning Fields");
         egui::Grid::new("spawn_fields").show(ui, |ui| {
-            // ui.label("total boids");
-            // ui.label(config.total_boids.to_string());
-            // ui.end_row();
-
             ui.label("boids count");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.spawn_count,
                 1..=10000u32,
             ));
-
-            // if ui.button("spawn").clicked() {
-            //     for _ in 0..config.spawn_count {
-            //         spawn_boid(&mut commands, bvd, &mut config, &mut materials);
-            //     }
-            // }
-
-            // if ui.button("despawn").clicked() {
-            //     for entity in boids.iter() {
-            //         commands.entity(entity).despawn_recursive();
-            //     }
-            //     config.total_boids = 0;
-            // }
             ui.end_row();
         });
 
@@ -550,8 +528,6 @@ fn highlight_boid(
             }
         }
     }
-
-    let result = Vec2::new(0.0, 0.0);
 }
 
 fn boid_flocking_spatial_hash(
@@ -559,7 +535,6 @@ fn boid_flocking_spatial_hash(
     mut boids: Query<(Entity, &mut Boid, Option<&Highlighted>)>,
     old_neighbors: Query<Entity, With<HighlightedNeighbor>>,
     config: Query<&BoidConfiguration>,
-    gizmos: Gizmos,
 ) {
     for entity in old_neighbors.iter() {
         commands.entity(entity).remove::<HighlightedNeighbor>();
@@ -570,7 +545,6 @@ fn boid_flocking_spatial_hash(
     let table_size = config.total_boids;
 
     let size = config.spatial_hash_size as f32;
-    let half_size = size / 2.0;
 
     let mut spatial_hash: HashMap<u32, Vec<(Entity, Vec2, Vec2)>> =
         HashMap::with_capacity(table_size as usize);

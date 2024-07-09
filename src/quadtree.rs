@@ -112,6 +112,7 @@ impl<T: Clone + std::fmt::Debug> Quadtree<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_count(&self) -> usize {
         self.count
             + match &self.quadrants {
