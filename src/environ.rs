@@ -15,6 +15,11 @@ pub fn default_plugins() -> PluginGroupBuilder {
     })
 }
 
+#[cfg(target_os = "linux")]
+pub fn default_plugins() -> PluginGroupBuilder {
+    DefaultPlugins.build()
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn default_plugins() -> PluginGroupBuilder {
     DefaultPlugins.build()

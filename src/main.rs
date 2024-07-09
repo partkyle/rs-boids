@@ -45,6 +45,7 @@ fn main() {
             (
                 close_on_esc,
                 boids_ui,
+                boid_ensure_count.after(boids_ui),
                 (
                     render_quadtree,
                     boid_select_randomly,
@@ -62,7 +63,7 @@ fn main() {
                     boid_highlight_neighbors,
                     update_boids_transform,
                 )
-                    .after(boids_ui),
+                    .after(boid_ensure_count),
             ),
         )
         .run();
@@ -138,28 +139,28 @@ fn boids_ui(
 
         ui.heading("Spawning Fields");
         egui::Grid::new("spawn_fields").show(ui, |ui| {
-            ui.label("total boids");
-            ui.label(config.total_boids.to_string());
-            ui.end_row();
+            // ui.label("total boids");
+            // ui.label(config.total_boids.to_string());
+            // ui.end_row();
 
-            ui.label("spawn count");
+            ui.label("boids count");
             ui.add(bevy_egui::egui::Slider::new(
                 &mut config.spawn_count,
                 1..=10000u32,
             ));
 
-            if ui.button("spawn").clicked() {
-                for _ in 0..config.spawn_count {
-                    spawn_boid(&mut commands, bvd, &mut config, &mut materials);
-                }
-            }
+            // if ui.button("spawn").clicked() {
+            //     for _ in 0..config.spawn_count {
+            //         spawn_boid(&mut commands, bvd, &mut config, &mut materials);
+            //     }
+            // }
 
-            if ui.button("despawn").clicked() {
-                for entity in boids.iter() {
-                    commands.entity(entity).despawn_recursive();
-                }
-                config.total_boids = 0;
-            }
+            // if ui.button("despawn").clicked() {
+            //     for entity in boids.iter() {
+            //         commands.entity(entity).despawn_recursive();
+            //     }
+            //     config.total_boids = 0;
+            // }
             ui.end_row();
         });
 
@@ -269,6 +270,36 @@ fn boid_ui_for_gizmos(ui: &mut bevy_egui::egui::Ui, text: &str, val: &mut BoidGi
     ui.end_row();
 }
 
+fn boid_ensure_count(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    bvd: Query<&BoidVisualData>,
+    mut config: Query<&mut BoidConfiguration>,
+    boids: Query<Entity, With<Boid>>,
+) {
+    let mut config = config.single_mut();
+    let bvd = bvd.single();
+
+    let current = boids.iter().count() as u32;
+
+    if current < config.spawn_count {
+        for _ in 0..(config.spawn_count - current) {
+            spawn_boid(&mut commands, bvd, &mut config, &mut materials);
+        }
+    }
+
+    if current > config.spawn_count {
+        let mut to_remove = current - config.spawn_count;
+        for entity in boids.iter() {
+            commands.entity(entity).despawn_recursive();
+            to_remove -= 1;
+            if to_remove == 0 {
+                break;
+            }
+        }
+    }
+}
+
 #[derive(Component, Default)]
 struct Boid {
     position: Vec2,
@@ -371,10 +402,6 @@ fn boid_flocking_behaviors(
 
         let neighbor_boids = qt.query(Rect { min, max });
 
-        if highlighted.is_some() {
-            println!("neighbors>?: {}", neighbor_boids.len());
-        }
-
         let mut dclose = Vec2::ZERO;
 
         let mut boids_in_visible_range = 0;
@@ -471,7 +498,6 @@ fn boid_select_randomly(
         let window = q_windows.single();
         if let Some(mouse) = window.cursor_position() {
             if let Some(mouse_ray) = camera.viewport_to_world(camera_transform, mouse) {
-                println!("mouseray:{}", mouse_ray.origin.xy());
                 if let Some((_, entity)) = boids
                     .iter()
                     .map(|(entity, boid)| (boid.position.distance(mouse_ray.origin.xy()), entity))
@@ -495,7 +521,7 @@ fn highlight_boid(
 
     let bounds = Rect::from_corners(config.boid_bounds.min * 12.0, config.boid_bounds.max * 12.0);
 
-    let size = 10.0;
+    let size = config.spatial_hash_size as f32;
     let half_size = size / 2.0;
     let x_cells = (bounds.width() / size).ceil() as u32;
     let y_cells = (bounds.height() / size).ceil() as u32;
@@ -543,7 +569,7 @@ fn boid_flocking_spatial_hash(
 
     let table_size = config.total_boids;
 
-    let size = 10.0;
+    let size = config.spatial_hash_size as f32;
     let half_size = size / 2.0;
 
     let mut spatial_hash: HashMap<u32, Vec<(Entity, Vec2, Vec2)>> =
@@ -604,10 +630,6 @@ fn boid_flocking_spatial_hash(
             let mut velocity_avg = Vec2::ZERO;
             let mut position_avg = Vec2::ZERO;
             let mut boids_in_visible_range = 0;
-
-            if highlighted.is_some() {
-                println!("neighbors>?: {}", results.len());
-            }
 
             for (other_entity, other_position, other_velocity) in results {
                 if entity == other_entity {

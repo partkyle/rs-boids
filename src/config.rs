@@ -18,6 +18,8 @@ pub struct BoidConfiguration {
     pub max_speed: f32,
     pub min_speed: f32,
 
+    pub spatial_hash_size: u32,
+
     pub bounds_gizmo: BoidGizmoConfig,
     pub quadtree_gizmo: BoidGizmoConfig,
     pub protected_range_gizmo: BoidGizmoConfig,
@@ -53,6 +55,8 @@ impl Default for BoidConfiguration {
 
             max_speed: 100.0,
             min_speed: 2.0,
+
+            spatial_hash_size: 100,
 
             bounds_gizmo: BoidGizmoConfig::new(false, [0.8, 0.6, 0.8, 1.0]),
             quadtree_gizmo: BoidGizmoConfig::new(false, [0.0, 1.0, 0.0, 0.1]),
