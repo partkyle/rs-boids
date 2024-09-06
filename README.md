@@ -5,12 +5,12 @@ Mostly based off of [Cornell's Exercises](https://people.ece.cornell.edu/land/co
 A simple example to get comfortable with rust and the bevy game engine.
 
 
-[screenshot](./docs/screenshot.png)
+![screenshot](./docs/screenshot.png)
 
-[animated](./docs/flocking.gif)
+![animated](./docs/flocking.gif)
 
 
 
 # experimentation doesn't always go well
 
-[something-wrong.gif](./docs/something-wrong.gif)
+![something-wrong.gif](./docs/something-wrong.gif)
