@@ -8,4 +8,3 @@ cp -r assets ./webbuild/
 # Copy the contents of index.html (see below), then run the following to replace project_name_here with your crate name from Cargo.toml
 PKG_NAME=$(grep '^name = ' Cargo.toml | awk -F '"' '{print $2}' | head -n 1)
 sed -i '' "s/\/out\/project_name_here.js/\/out\/${PKG_NAME}.js/g" webbuild/index.html
-npx serve webbuild  # then navigate to http://localhost:3000
