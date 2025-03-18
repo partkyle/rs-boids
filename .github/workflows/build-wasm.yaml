@@ -1,0 +1,25 @@
+name: build WASM
+
+on:
+  push:
+    branches:
+      - main
+  
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: build
+        run: |
+          ./bin/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webbuild
+          path: webbuild
