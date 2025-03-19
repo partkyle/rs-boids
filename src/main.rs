@@ -42,10 +42,10 @@ fn main() {
             (
                 boids_ui,
                 boid_ensure_count.after(boids_ui),
+                boid_select_randomly.after(boid_ensure_count),
                 render_bounds_gizmo,
                 (
                     render_quadtree,
-                    boid_select_randomly,
                     highlight_boid,
                     (populate_quadtree, boid_flocking_behaviors)
                         .run_if(in_state(SpatialState::QuadTree)),
@@ -107,7 +107,7 @@ fn boids_ui(
 ) {
     let mut config = config.single_mut();
 
-    egui::Window::new("boids").show(contexts.ctx_mut(), |ui| {
+    egui::Window::new("boid configuration").show(contexts.ctx_mut(), |ui| {
         if let Some(fps) = diagnostics
             .get(&FrameTimeDiagnosticsPlugin::FPS)
             .and_then(|fps| fps.smoothed())
