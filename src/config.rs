@@ -63,8 +63,8 @@ impl Default for BoidConfiguration {
             protected_range_gizmo: BoidGizmoConfig::new(false, [1.0, 0.0, 0.0, 0.1]),
             visible_range_gizmo: BoidGizmoConfig::new(false, [0.6, 1.0, 0.0, 0.1]),
 
-            update_color_sample_rate: 0.0,
-            update_color_type: ColorType::Synthwave,
+            update_color_sample_rate: 0.15,
+            update_color_type: ColorType::Initial,
         }
     }
 }

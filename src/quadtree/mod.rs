@@ -1,3 +1,5 @@
+pub mod gizmos;
+
 use bevy::math::{Rect, Vec2};
 
 #[derive(Debug)]

@@ -10,13 +10,12 @@ use rand::random;
 mod config;
 mod environ;
 mod quadtree;
-mod quadtree_gizmos;
 mod range_gizmos;
 
 use config::{BoidConfiguration, BoidGizmoConfig, ColorType};
 use environ::default_plugins;
+use quadtree::gizmos::render_quadtree;
 use quadtree::Quadtree;
-use quadtree_gizmos::render_quadtree;
 use range_gizmos::boid_draw_range_gizmos;
 
 #[derive(Resource, Deref, DerefMut)]
@@ -45,6 +44,7 @@ fn main() {
             (
                 boids_ui,
                 boid_ensure_count.after(boids_ui),
+                render_bounds_gizmo,
                 (
                     render_quadtree,
                     boid_select_randomly,
@@ -56,7 +56,6 @@ fn main() {
                     boid_speed_up,
                     boid_movement,
                     boid_draw_range_gizmos,
-                    render_bounds_gizmo,
                     boid_rotation,
                     boid_update_colors,
                     boid_highlight_neighbors,
@@ -88,7 +87,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, window: Query
 
     commands.spawn_empty().insert(BoidVisualData { shape });
 
-    let config = BoidConfiguration {
+    let config: BoidConfiguration = BoidConfiguration {
         boid_bounds: Rect::new(
             -window.width() / 2.0,
             -window.height() / 2.0,
@@ -685,8 +684,10 @@ fn boid_highlight_neighbors(
     }
 }
 
+// Update the colors for the boids in the system basedon the configuration
 fn boid_update_colors(
-    boids: Query<(&Boid, &MeshMaterial2d<ColorMaterial>)>,
+    // only pull in the boids that are not currently highlighted
+    boids: Query<(&Boid, &MeshMaterial2d<ColorMaterial>), Without<HighlightedNeighbor>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     config: Query<&BoidConfiguration>,
 ) {
