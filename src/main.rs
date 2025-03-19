@@ -4,7 +4,6 @@ use bevy::utils::hashbrown::HashMap;
 use bevy::window::PrimaryWindow;
 use bevy_egui::egui::lerp;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use rand::random;
 
 mod config;
@@ -31,7 +30,6 @@ fn main() {
     App::new()
         .add_plugins(default_plugins())
         .add_plugins(EguiPlugin)
-        .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .insert_state(SpatialState::SpatialHash)
         .insert_resource(QuadtreeJail(quadtree::Quadtree::new(
