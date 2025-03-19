@@ -30,7 +30,7 @@ jobs:
       
       - name: Install wasm-bindgen
         run: |
-          cargo install -f wasm-bindgen-cli --version 0.2.92
+          cargo install -f wasm-bindgen-cli
 
       - name: build
         run: |
