@@ -1,4 +1,4 @@
-use bevy::{ecs::system::Query, gizmos::gizmos::Gizmos, render::color::Color};
+use bevy::{color::Color, ecs::system::Query, gizmos::gizmos::Gizmos};
 
 use crate::{config::BoidConfiguration, Boid};
 
@@ -14,7 +14,12 @@ pub fn boid_draw_range_gizmos(
             gizmos.circle_2d(
                 boid.position,
                 config.protected_range,
-                Color::rgba_from_array(config.protected_range_gizmo.color_rgba),
+                Color::linear_rgba(
+                    config.protected_range_gizmo.color_rgba[0],
+                    config.protected_range_gizmo.color_rgba[1],
+                    config.protected_range_gizmo.color_rgba[2],
+                    config.protected_range_gizmo.color_rgba[3],
+                ),
             );
         }
 
@@ -22,7 +27,12 @@ pub fn boid_draw_range_gizmos(
             gizmos.circle_2d(
                 boid.position,
                 config.visible_range,
-                Color::rgba_from_array(config.visible_range_gizmo.color_rgba),
+                Color::linear_rgba(
+                    config.protected_range_gizmo.color_rgba[0],
+                    config.protected_range_gizmo.color_rgba[1],
+                    config.protected_range_gizmo.color_rgba[2],
+                    config.protected_range_gizmo.color_rgba[3],
+                ),
             );
         }
     }

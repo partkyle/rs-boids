@@ -1,7 +1,8 @@
 use bevy::{
+    color::Color,
     ecs::system::{Query, Res},
     gizmos::gizmos::Gizmos,
-    render::color::Color,
+    math::Isometry2d,
 };
 
 use crate::{config::BoidConfiguration, QuadtreeJail};
@@ -21,11 +22,15 @@ pub fn render_quadtree(
         let size = b.max - b.min;
         let origin = b.min + size * 0.5;
 
-        gizmos.rect_2d(
-            origin,
-            0.0,
-            size,
-            Color::rgba_from_array(config.quadtree_gizmo.color_rgba),
+        let iso = Isometry2d::from_translation(origin);
+
+        let color = Color::srgba(
+            config.quadtree_gizmo.color_rgba[0],
+            config.quadtree_gizmo.color_rgba[1],
+            config.quadtree_gizmo.color_rgba[2],
+            config.quadtree_gizmo.color_rgba[3],
         );
+
+        gizmos.rect_2d(iso, size, color);
     }
 }

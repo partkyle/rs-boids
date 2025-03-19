@@ -1,7 +1,7 @@
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::prelude::*;
 use bevy::utils::hashbrown::HashMap;
-use bevy::window::{close_on_esc, PrimaryWindow};
-use bevy::{prelude::*, sprite::Mesh2dHandle};
+use bevy::window::PrimaryWindow;
 use bevy_egui::egui::lerp;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
@@ -43,7 +43,6 @@ fn main() {
         .add_systems(
             Update,
             (
-                close_on_esc,
                 boids_ui,
                 boid_ensure_count.after(boids_ui),
                 (
@@ -70,7 +69,7 @@ fn main() {
 }
 
 fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d::default());
 }
 
 #[derive(Component)]
@@ -306,7 +305,7 @@ fn spawn_boid(
 ) {
     let entity = commands.spawn_empty().id();
 
-    let initial_color = Color::rgb(0.0, random(), random());
+    let initial_color = Color::srgb(0.0, random(), random());
 
     let position = Vec2::new(
         lerp(
@@ -319,29 +318,29 @@ fn spawn_boid(
         ),
     );
 
-    commands.entity(entity).insert((
-        Name::new("boid"),
-        ColorMesh2dBundle {
-            mesh: Mesh2dHandle(bvd.shape.clone()),
-            // material: materials.add(Color::rgb(random(), random(), random())),
-            material: materials.add(initial_color),
-            transform: Transform::from_xyz(
-                position.x,
-                position.y,
-                // use the entity index for the z value to prevent (war) z-fighting
-                entity.index() as f32 * 0.001,
-            ),
-            ..default()
-        },
-        Boid {
-            position,
-            velocity: Vec2 {
-                x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-                y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
-            },
-            initial_color,
-        },
+    commands.entity(entity).insert(Name::new("boid"));
+
+    commands.entity(entity).insert(Mesh2d(bvd.shape.clone()));
+
+    commands
+        .entity(entity)
+        .insert(MeshMaterial2d(materials.add(initial_color)));
+
+    commands.entity(entity).insert(Transform::from_xyz(
+        position.x,
+        position.y,
+        // use the entity index for the z value to prevent (war) z-fighting
+        entity.index() as f32 * 0.001,
     ));
+
+    commands.entity(entity).insert(Boid {
+        initial_color: initial_color,
+        position,
+        velocity: Vec2 {
+            x: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+            y: lerp(-config.max_speed..=config.max_speed, random::<f32>()),
+        },
+    });
 
     config.total_boids += 1;
 }
@@ -475,7 +474,7 @@ fn boid_select_randomly(
         let (camera, camera_transform) = camera.single();
         let window = q_windows.single();
         if let Some(mouse) = window.cursor_position() {
-            if let Some(mouse_ray) = camera.viewport_to_world(camera_transform, mouse) {
+            if let Ok(mouse_ray) = camera.viewport_to_world(camera_transform, mouse) {
                 if let Some((_, entity)) = boids
                     .iter()
                     .map(|(entity, boid)| (boid.position.distance(mouse_ray.origin.xy()), entity))
@@ -509,7 +508,11 @@ fn highlight_boid(
     let neighbors = (radius / size).ceil() as u32 + 1;
 
     for (_, boid) in highlighted.iter() {
-        gizmos.circle_2d(boid.position, config.visible_range, Color::LIME_GREEN);
+        gizmos.circle_2d(
+            boid.position,
+            config.visible_range,
+            Color::srgb(0.0, 1.0, 0.0),
+        );
 
         if let Some(cell) = find_cell_position(boid.position, bounds, size) {
             for y in (cell.y - neighbors).clamp(0, cell_size.y)
@@ -519,10 +522,11 @@ fn highlight_boid(
                     ..(cell.x + neighbors).clamp(0, cell_size.x)
                 {
                     gizmos.rect_2d(
-                        bounds.min + half_size + Vec2::new(x as f32, y as f32) * size,
-                        0.0,
+                        Isometry2d::from_translation(
+                            bounds.min + half_size + Vec2::new(x as f32, y as f32) * size,
+                        ),
                         Vec2::splat(size),
-                        Color::RED.with_a(0.1),
+                        Color::srgba(1.0, 0.0, 0.0, 0.1),
                     );
                 }
             }
@@ -650,7 +654,7 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
         if boid.velocity.length() <= config.max_speed {
             boid.velocity = boid.velocity.lerp(
                 boid.velocity.normalize() * config.max_speed,
-                time.delta_seconds(),
+                time.delta_secs(),
             );
         }
 
@@ -661,8 +665,8 @@ fn boid_speed_up(time: Res<Time>, mut boids: Query<&mut Boid>, config: Query<&Bo
 }
 
 fn boid_highlight_neighbors(
-    neighbor_boids: Query<&Handle<ColorMaterial>, (With<Boid>, Added<HighlightedNeighbor>)>,
-    boids: Query<(&Handle<ColorMaterial>, &Boid), Without<HighlightedNeighbor>>,
+    neighbor_boids: Query<&MeshMaterial2d<ColorMaterial>, (With<Boid>, Added<HighlightedNeighbor>)>,
+    boids: Query<(&MeshMaterial2d<ColorMaterial>, &Boid), Without<HighlightedNeighbor>>,
     mut removed_neighbors: RemovedComponents<HighlightedNeighbor>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
@@ -676,13 +680,13 @@ fn boid_highlight_neighbors(
 
     for material_handle in neighbor_boids.iter() {
         if let Some(color) = materials.get_mut(material_handle) {
-            color.color = Color::RED;
+            color.color = Color::srgba(1.0, 0.0, 0.0, 1.0);
         }
     }
 }
 
 fn boid_update_colors(
-    boids: Query<(&Boid, &Handle<ColorMaterial>)>,
+    boids: Query<(&Boid, &MeshMaterial2d<ColorMaterial>)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     config: Query<&BoidConfiguration>,
 ) {
@@ -702,17 +706,17 @@ fn boid_update_colors(
                     ColorType::Synthwave => {
                         let r: f32 = boid.velocity.x.abs() / config.max_speed;
                         let g = boid.velocity.y.abs() / config.max_speed;
-                        color.color = Color::rgb(r, g, 1.0);
+                        color.color = Color::srgb(r, g, 1.0);
                     }
                     ColorType::Pastel => {
                         let r: f32 = boid.velocity.x.abs() / config.max_speed;
                         let g = boid.velocity.y.abs() / config.max_speed;
-                        color.color = Color::rgb(r, g, (1.0 - r - g).clamp(0.0, 1.0));
+                        color.color = Color::srgb(r, g, (1.0f32 - r - g).clamp(0.0, 1.0));
                     }
                     ColorType::PrimaryRGB => {
                         let r: f32 = (boid.velocity.x + boid.velocity.x.abs()) / config.max_speed;
                         let g = (boid.velocity.y + boid.velocity.y.abs()) / config.max_speed;
-                        color.color = Color::rgb(r, g, (1.0 - r - g).clamp(0.0, 1.0));
+                        color.color = Color::srgb(r, g, (1.0f32 - r - g).clamp(0.0, 1.0));
                     }
                 }
             }
@@ -776,10 +780,15 @@ pub fn render_bounds_gizmo(config: Query<&BoidConfiguration>, mut gizmos: Gizmos
 
     let size = config.boid_bounds.max - config.boid_bounds.min;
     let position = config.boid_bounds.min + size * 0.5;
-    gizmos.rect_2d(
-        position,
-        0.0,
-        size,
-        Color::rgba_from_array(config.bounds_gizmo.color_rgba),
+
+    let iso = Isometry2d::from_translation(position);
+
+    let color = Color::srgba(
+        config.bounds_gizmo.color_rgba[0],
+        config.bounds_gizmo.color_rgba[1],
+        config.bounds_gizmo.color_rgba[2],
+        config.bounds_gizmo.color_rgba[3],
     );
+
+    gizmos.rect_2d(iso, size, color);
 }

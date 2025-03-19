@@ -4,13 +4,7 @@ use bevy::DefaultPlugins;
 
 #[cfg(target_os = "windows")]
 pub fn default_plugins() -> PluginGroupBuilder {
-    DefaultPlugins.set(RenderPlugin {
-        render_creation: RenderCreation::Automatic(WgpuSettings {
-            backends: Some(Backends::VULKAN),
-            ..Default::default()
-        }),
-        ..Default::default()
-    })
+    DefaultPlugins.build()
 }
 
 #[cfg(target_os = "linux")]
